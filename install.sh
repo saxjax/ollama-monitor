@@ -18,6 +18,7 @@ default_data_dir="$HOME/Library/Application Support/Saxjax Monitor"
 data_dir="${MONITOR_DATA_DIR:-$default_data_dir}"
 app_bundle="$HOME/Applications/Saxjax Monitor.app"
 legacy_app_bundle="$HOME/Applications/Ollama Monitor.app"
+launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 monitor_host="${MONITOR_HOST:-127.0.0.1}"
 monitor_port="${MONITOR_PORT:-11435}"
 ollama_upstream="${OLLAMA_UPSTREAM:-http://127.0.0.1:11434}"
@@ -31,6 +32,37 @@ monitor_url="${OLLAMA_MONITOR_URL:-http://127.0.0.1:$monitor_port/monitor/}"
 
 valid_port() {
   [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 ))
+}
+
+listener_pids() {
+  /usr/sbin/lsof -nP -t -iTCP:"$monitor_port" -sTCP:LISTEN 2>/dev/null || true
+}
+
+clear_stale_monitor_listener() {
+  local expected_command="$node_bin $repo_root/gateway.mjs"
+  local pid command
+
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    command="$(/bin/ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ "$command" != "$expected_command" ]]; then
+      printf 'Cannot install: port %s is already used by PID %s (%s).\n' \
+        "$monitor_port" "$pid" "${command:-unknown process}" >&2
+      printf 'Stop that process or choose another port with MONITOR_PORT.\n' >&2
+      exit 1
+    fi
+
+    printf 'Stopping stale Saxjax Monitor process %s.\n' "$pid"
+    /bin/kill "$pid"
+  done < <(listener_pids)
+
+  for (( attempt = 0; attempt < 50; attempt++ )); do
+    [[ -z "$(listener_pids)" ]] && return
+    /bin/sleep 0.1
+  done
+
+  printf 'Cannot install: port %s did not become available.\n' "$monitor_port" >&2
+  exit 1
 }
 
 if ! valid_port "$monitor_port"; then
@@ -80,6 +112,7 @@ if [[ -z "${MONITOR_DATA_DIR:-}" && -d "$legacy_data_dir" && ! -e "$default_data
 fi
 
 launchctl bootout "$domain/$monitor_service_label" 2>/dev/null || true
+clear_stale_monitor_listener
 
 rm -f "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :Label string $monitor_service_label" "$launch_agent"
@@ -113,10 +146,11 @@ chmod 600 "$launch_agent"
 
 APP_DESTINATION="$app_bundle" OLLAMA_MONITOR_URL="$monitor_url" "$repo_root/launcher/build-app.sh"
 rm -rf "$legacy_app_bundle"
+"$launch_services_register" -f "$app_bundle"
+/usr/bin/mdimport "$app_bundle" 2>/dev/null || true
 
 launchctl enable "$domain/$monitor_service_label"
 launchctl bootstrap "$domain" "$launch_agent"
-launchctl kickstart -k "$domain/$monitor_service_label"
 
 printf '\nSaxjax Monitor installed.\n'
 printf 'App:       %s\n' "$app_bundle"

@@ -109,6 +109,16 @@ Rebuild the launcher with:
 ./launcher/build-app.sh
 ```
 
+The launcher includes a complete liquid-glass macOS icon family. Its editable
+master is `assets/SaxjaxMonitorIcon-source.png`; regenerate every standard icon
+size after changing it with:
+
+```bash
+swift launcher/generate-iconset.swift \
+  assets/SaxjaxMonitorIcon-source.png \
+  launcher/Assets.xcassets/AppIcon.appiconset
+```
+
 Run the capture smoke test while Saxjax Monitor is running:
 
 ```bash

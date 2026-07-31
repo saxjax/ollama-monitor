@@ -1,0 +1,8 @@
+.DS_Store
+*.log
+*.app/
+build/
+data/
+
+# Prompt and response history must never be committed.
+traffic.jsonl

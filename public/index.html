@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Ollama Monitor — Inference Telemetry</title>
+    <link rel="stylesheet" href="/monitor/styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="masthead">
+      <div class="identity">
+        <span class="eyebrow">Local inference observatory</span>
+        <h1>OLLAMA<span>/</span>MONITOR</h1>
+      </div>
+      <button class="server-state" id="server-state" type="button" role="switch" data-online="false" aria-label="Ollama power" aria-checked="false" aria-busy="false" title="Start Ollama">
+        <span class="power-switch" aria-hidden="true">
+          <span class="power-track">
+            <span class="power-knob"><i class="power-mark power-mark-off">0</i><i class="power-mark power-mark-on">1</i></span>
+          </span>
+        </span>
+        <span><b id="server-label">Connecting</b><small id="server-version">OLLAMA · POWER</small></span>
+      </button>
+      <div class="clock"><strong id="clock">--:--:--</strong><small id="clock-zone">LOCAL TIME</small></div>
+    </header>
+
+    <main>
+      <section class="telemetry telemetry-readouts" aria-label="System details">
+        <article class="readout model-readout">
+          <span class="label">Resident model</span>
+          <strong id="model-name">No model loaded</strong>
+          <div class="model-meta">
+            <span id="model-size">— allocation</span>
+            <span id="model-processor">— processor</span>
+            <span id="model-context">— context</span>
+          </div>
+        </article>
+
+        <article class="readout load-readout">
+          <span class="label">Work competing for CPU</span>
+          <strong id="load-summary">— / — cores</strong>
+          <p class="helper" id="load-explanation">Average runnable jobs over one minute. Below the core count means there is CPU headroom.</p>
+          <div class="scale"><span id="load-five">5 min: —</span><span id="load-fifteen">15 min: —</span></div>
+        </article>
+
+        <article class="readout process-readout">
+          <span class="label">Ollama service RAM</span>
+          <strong><span id="ollama-rss">—</span> <i>MiB</i></strong>
+          <p class="helper">Memory used by Ollama’s controller. The much larger model allocation is shown separately.</p>
+          <div class="model-meta"><span id="ollama-cpu">— CPU</span><span id="process-count">— processes</span></div>
+        </article>
+      </section>
+
+      <section class="telemetry telemetry-dials" aria-label="Primary system telemetry">
+        <article class="dial" id="cpu-dial" style="--value: 0">
+          <div class="dial-face"><b id="cpu-value">—</b><span>CPU</span></div>
+          <small>SYSTEM PRESSURE</small>
+        </article>
+        <article class="dial" id="memory-dial" style="--value: 0">
+          <div class="dial-face"><b id="memory-value">—</b><span>MEM</span></div>
+          <small>UNIFIED MEMORY</small>
+        </article>
+        <article class="dial" id="swap-dial" style="--value: 0">
+          <div class="dial-face"><b id="swap-value">—</b><span>SWAP</span></div>
+          <small id="swap-detail">USED / TOTAL</small>
+        </article>
+      </section>
+
+      <section class="core-observatory" aria-labelledby="core-title">
+        <header class="core-head">
+          <div>
+            <span class="label">Hardware scheduler</span>
+            <h2 id="core-title">Core activity</h2>
+          </div>
+          <div class="core-summary" id="core-summary">Detecting hardware topology…</div>
+          <div class="core-legend" aria-label="Core type legend">
+            <span><i class="performance"></i> Performance</span>
+            <span><i class="efficiency"></i> Efficiency</span>
+          </div>
+        </header>
+        <div class="core-grid" id="core-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="workbench">
+        <div class="stream-panel">
+          <div class="section-head">
+            <div><span class="index">01</span><h2>Inference wire</h2></div>
+            <div class="stream-controls">
+              <label class="session-filter">Session
+                <select id="session-filter" aria-label="Filter inference requests by session">
+                  <option value="all">All sessions</option>
+                </select>
+              </label>
+              <label><input id="autofollow" type="checkbox" checked /><span>Follow newest</span></label>
+              <button id="clear-view" type="button" title="Permanently delete all completed request history">Clear view</button>
+            </div>
+          </div>
+          <div class="stream" id="stream" aria-live="polite">
+            <div class="empty-state" id="empty-state">
+              <div class="radar"><i></i><i></i><i></i></div>
+              <strong>Listening for inference traffic</strong>
+              <p>Requests will appear here token by token when clients use the monitored gateway.</p>
+            </div>
+          </div>
+        </div>
+
+        <aside class="side-panel">
+          <div class="section-head"><div><span class="index">02</span><h2>Throughput</h2></div></div>
+          <div class="counters">
+            <div><b id="active-count">0</b><span>ACTIVE</span></div>
+            <div><b id="total-count">0</b><span>TOTAL</span></div>
+            <div><b id="error-count">0</b><span>ERRORS</span></div>
+          </div>
+          <div class="facts">
+            <div><span>Disk free</span><b id="disk-free">—</b></div>
+            <div><span>Uptime</span><b id="uptime">—</b></div>
+            <div><span>Gateway</span><b id="gateway-address">LOCAL :11435</b></div>
+            <div><span>Ollama</span><b id="upstream-address">LOCAL :11434</b></div>
+          </div>
+          <div class="privacy-note">
+            <span>Capture policy</span>
+            <p>Prompt and response text is stored locally in <code>traffic.jsonl</code> until you choose <strong>Clear view</strong>.</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <template id="request-template">
+      <article class="exchange">
+        <header class="exchange-head">
+          <button class="exchange-toggle" type="button" aria-expanded="true" title="Collapse request">
+            <span class="exchange-meta">
+              <span class="status-mark"></span>
+              <span class="session-badge"></span>
+              <b class="exchange-model"></b>
+              <time></time>
+              <span class="latency"></span>
+              <span class="token-stats"></span>
+              <span class="exchange-status"></span>
+              <span class="collapse-mark" aria-hidden="true"></span>
+            </span>
+            <span class="context-usage">
+              <span class="context-title">SESSION CONTEXT</span>
+              <span class="context-track"><i></i></span>
+              <b class="context-label">Calculating…</b>
+              <small>Input tokens carried into this request versus the model’s available context.</small>
+            </span>
+          </button>
+        </header>
+        <div class="message prompt"><button class="open-content" data-kind="in" type="button" title="Open the complete incoming context; preview is limited to 10 lines">IN</button><pre></pre></div>
+        <details class="thinking"><summary>Model reasoning</summary><pre></pre></details>
+        <div class="message response"><button class="open-content" data-kind="out" type="button" title="Open the complete model response; preview is limited to 10 lines">OUT</button><pre></pre><i class="cursor"></i></div>
+      </article>
+    </template>
+
+    <dialog id="content-reader" aria-labelledby="reader-title">
+      <div class="reader-shell">
+        <header class="reader-head">
+          <div>
+            <span id="reader-direction">INCOMING CONTEXT</span>
+            <h2 id="reader-title">Full transmission</h2>
+          </div>
+          <button id="reader-close" type="button" aria-label="Close full content reader">CLOSE <b>×</b></button>
+        </header>
+        <div class="reader-meta">
+          <span id="reader-model">—</span>
+          <span id="reader-time">—</span>
+          <span id="reader-context">—</span>
+        </div>
+        <pre id="reader-content" tabindex="0"></pre>
+        <footer>
+          <span id="reader-count">—</span>
+          <span>ESC TO CLOSE</span>
+        </footer>
+      </div>
+    </dialog>
+    <script src="/monitor/app.js" defer></script>
+  </body>
+</html>

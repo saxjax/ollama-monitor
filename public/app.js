@@ -99,6 +99,31 @@ function duration(seconds) {
   return days ? `${days}d ${hours}h` : `${hours}h ${minutes}m`;
 }
 
+function renderMachineTitle(machineName) {
+  const heading = $("#machine-title");
+  const normalized = String(machineName || "OLLAMA-MONITOR")
+    .replace(/\.local$/i, "")
+    .trim();
+  if (heading.dataset.machineName === normalized) return;
+
+  const parts = normalized.split(/[\s_-]+/).filter(Boolean);
+  const displayParts = (parts.length ? parts : ["OLLAMA", "MONITOR"])
+    .map((part) => part.toLocaleUpperCase());
+  heading.replaceChildren();
+  displayParts.forEach((part, index) => {
+    if (index) {
+      const separator = document.createElement("span");
+      separator.textContent = "/";
+      heading.append(separator);
+    }
+    heading.append(document.createTextNode(part));
+  });
+  heading.dataset.machineName = normalized;
+  heading.setAttribute("aria-label", normalized);
+  heading.title = normalized;
+  document.title = `${displayParts.join("/")} — Ollama Monitor`;
+}
+
 function setDial(id, value, suffix = "%") {
   const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
   $(`#${id}-dial`).style.setProperty("--value", safe);
@@ -144,6 +169,7 @@ function renderCores(system) {
 function renderMetrics(metrics) {
   if (!metrics) return;
   const { server, system, ollama, requests, configuration } = metrics;
+  renderMachineTitle(system.machineName);
   if (!ollamaControlPending) {
     serverState.dataset.online = String(server.online);
     serverState.setAttribute("aria-checked", String(server.online));

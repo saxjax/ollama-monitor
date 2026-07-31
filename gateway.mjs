@@ -598,7 +598,20 @@ function systemValue(read, fallback = null) {
 }
 
 let hardwareInfoPromise = null;
+let machineNamePromise = null;
 let previousCoreTimes = null;
+
+function getMachineName() {
+  if (machineNamePromise) return machineNamePromise;
+  machineNamePromise = (async () => {
+    const [localHostName, computerName] = await Promise.all([
+      run("/usr/sbin/scutil", ["--get", "LocalHostName"]),
+      run("/usr/sbin/scutil", ["--get", "ComputerName"]),
+    ]);
+    return localHostName || computerName || os.hostname().replace(/\.local$/i, "") || "Ollama Monitor";
+  })();
+  return machineNamePromise;
+}
 
 function getHardwareInfo() {
   if (hardwareInfoPromise) return hardwareInfoPromise;
@@ -661,7 +674,7 @@ function sampleCoreActivity(hardware) {
 }
 
 async function collectMetrics() {
-  const [top, pressure, swap, processesText, ollamaPs, disk, hardware] = await Promise.all([
+  const [top, pressure, swap, processesText, ollamaPs, disk, hardware, machineName] = await Promise.all([
     run("/usr/bin/top", ["-l", "1", "-n", "0"]),
     run("/usr/bin/memory_pressure"),
     run("/usr/sbin/sysctl", ["-n", "vm.swapusage"]),
@@ -669,6 +682,7 @@ async function collectMetrics() {
     run(ollamaBinary, ["ps"]),
     run("/bin/df", ["-k", "/"]),
     getHardwareInfo(),
+    getMachineName(),
   ]);
   const cores = sampleCoreActivity(hardware);
 
@@ -720,6 +734,7 @@ async function collectMetrics() {
     },
     server,
     system: {
+      machineName,
       cpuUsed: cpuMatch ? 100 - Number(cpuMatch[3]) : null,
       memoryFree: memoryMatch ? Number(memoryMatch[1]) : null,
       swapUsedMB: swapMatch ? sizeToMB(swapMatch[3], swapMatch[4]) : null,

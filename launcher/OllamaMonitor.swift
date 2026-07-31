@@ -28,7 +28,8 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         .flatMap(URL.init(string:))
         ?? (Bundle.main.object(forInfoDictionaryKey: "OllamaMonitorURL") as? String).flatMap(URL.init(string:))
         ?? URL(string: "http://127.0.0.1:11435/monitor/")!
-    private let serviceLabel = "io.github.saxjax.ollama-monitor"
+    private let serviceLabel = Bundle.main.object(forInfoDictionaryKey: "MonitorServiceLabel") as? String
+        ?? "io.github.saxjax.ollama-monitor"
     private let widgetModeKey = "widgetModeEnabled"
     private let normalFrameKey = "normalWindowFrame"
     private let normalMinimumSize = NSSize(width: 760, height: 580)
@@ -71,9 +72,9 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Ollama Monitor", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About Saxjax Monitor", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Ollama Monitor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Saxjax Monitor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
@@ -111,7 +112,7 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         dragBar.toolTip = "Drag here to move the monitor"
         dragBar.setAccessibilityLabel("Window drag handle")
 
-        let dragLabel = NSTextField(labelWithString: "OLLAMA MONITOR   ·   DRAG TO MOVE")
+        let dragLabel = NSTextField(labelWithString: "SAXJAX MONITOR   ·   DRAG TO MOVE")
         dragLabel.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .medium)
         dragLabel.textColor = NSColor(calibratedRed: 0.51, green: 0.57, blue: 0.53, alpha: 1)
         dragLabel.lineBreakMode = .byTruncatingTail
@@ -159,7 +160,7 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
             backing: .buffered,
             defer: false
         )
-        window.title = "Ollama Monitor"
+        window.title = "Saxjax Monitor"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = NSColor(calibratedRed: 0.02, green: 0.032, blue: 0.027, alpha: 1)
@@ -231,7 +232,7 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         widgetButton.title = enabled ? "FULL VIEW" : "WIDGET"
         widgetButton.toolTip = enabled ? "Return to the full monitor" : "Open as a floating widget"
         widgetMenuItem.title = enabled ? "Exit Widget Mode" : "Enter Widget Mode"
-        window.title = enabled ? "Ollama Monitor — Widget" : "Ollama Monitor"
+        window.title = enabled ? "Saxjax Monitor — Widget" : "Saxjax Monitor"
         if persist {
             UserDefaults.standard.set(enabled, forKey: widgetModeKey)
         }

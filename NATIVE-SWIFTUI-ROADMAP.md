@@ -1,4 +1,4 @@
-# Ollama Monitor Native SwiftUI Roadmap
+# Saxjax Monitor Native SwiftUI Roadmap
 
 ## Prototype status
 
@@ -28,7 +28,7 @@ Important limitations to preserve honestly in the native app:
 
 ## Native product direction
 
-Build a native macOS SwiftUI application named **Ollama Monitor**. Treat the current browser dashboard as the behavioral and visual prototype.
+Build a native macOS SwiftUI application named **Saxjax Monitor**. Treat the current browser dashboard as the behavioral and visual prototype.
 
 Version 1 replaces the browser interface, not the gateway. It connects to the existing local gateway and consumes its state endpoint and Server-Sent Events stream. Do not embed a web view and do not duplicate the proxy in the first milestone.
 
@@ -197,7 +197,7 @@ The native app is equivalent to the prototype when all of these pass:
 
 Paste the following into Xcode's coding assistant after creating a new macOS SwiftUI app project:
 
-> Build a native macOS SwiftUI application named **Ollama Monitor**. The existing browser dashboard is a validated prototype; this app must reproduce its behavior natively and must not use WebKit or embed the website.
+> Build a native macOS SwiftUI application named **Saxjax Monitor**. The existing browser dashboard is a validated prototype; this app must reproduce its behavior natively and must not use WebKit or embed the website.
 >
 > For version 1, keep the existing Ollama monitoring gateway as the backend. Connect to `http://127.0.0.1:11435`, fetch `/monitor/api/state`, and consume `/monitor/events` as Server-Sent Events. Implement tolerant Codable models and a testable `MonitorClient` plus a `@MainActor` observable store. Use Swift concurrency, reconnect with bounded exponential backoff, refetch state after reconnect, and merge requests by stable ID without duplicating streamed text.
 >

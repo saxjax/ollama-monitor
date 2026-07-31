@@ -1,6 +1,6 @@
 # Security and privacy
 
-Ollama Monitor is designed for trusted local use. It intentionally captures
+Saxjax Monitor is designed for trusted local use. It intentionally captures
 complete prompts, model responses, reasoning fields, client addresses, and
 request metadata passing through its gateway.
 

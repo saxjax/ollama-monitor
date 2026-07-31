@@ -121,7 +121,7 @@ function renderMachineTitle(machineName) {
   heading.dataset.machineName = normalized;
   heading.setAttribute("aria-label", normalized);
   heading.title = normalized;
-  document.title = `${displayParts.join("/")} — Ollama Monitor`;
+  document.title = `${displayParts.join("/")} — Saxjax Monitor`;
 }
 
 function setDial(id, value, suffix = "%") {

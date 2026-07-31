@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  printf 'Ollama Monitor currently supports macOS only.\n' >&2
+  printf 'Saxjax Monitor currently supports macOS only.\n' >&2
   exit 1
 fi
 
@@ -12,9 +12,12 @@ node_bin="$(command -v node || true)"
 monitor_service_label="io.github.saxjax.ollama-monitor"
 domain="gui/$(id -u)"
 launch_agent="$HOME/Library/LaunchAgents/$monitor_service_label.plist"
-log_file="$HOME/Library/Logs/Ollama Monitor.log"
-data_dir="${MONITOR_DATA_DIR:-$HOME/Library/Application Support/Ollama Monitor}"
-app_bundle="$HOME/Applications/Ollama Monitor.app"
+log_file="$HOME/Library/Logs/Saxjax Monitor.log"
+legacy_data_dir="$HOME/Library/Application Support/Ollama Monitor"
+default_data_dir="$HOME/Library/Application Support/Saxjax Monitor"
+data_dir="${MONITOR_DATA_DIR:-$default_data_dir}"
+app_bundle="$HOME/Applications/Saxjax Monitor.app"
+legacy_app_bundle="$HOME/Applications/Ollama Monitor.app"
 monitor_host="${MONITOR_HOST:-127.0.0.1}"
 monitor_port="${MONITOR_PORT:-11435}"
 ollama_upstream="${OLLAMA_UPSTREAM:-http://127.0.0.1:11434}"
@@ -69,6 +72,13 @@ fi
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs" "$data_dir" "$HOME/Applications"
 chmod 700 "$data_dir"
 
+if [[ -z "${MONITOR_DATA_DIR:-}" && -d "$legacy_data_dir" && ! -e "$default_data_dir/traffic.jsonl" ]]; then
+  if [[ -f "$legacy_data_dir/traffic.jsonl" ]]; then
+    /bin/mv "$legacy_data_dir/traffic.jsonl" "$default_data_dir/traffic.jsonl"
+  fi
+  /bin/rmdir "$legacy_data_dir" 2>/dev/null || true
+fi
+
 launchctl bootout "$domain/$monitor_service_label" 2>/dev/null || true
 
 rm -f "$launch_agent"
@@ -102,12 +112,13 @@ fi
 chmod 600 "$launch_agent"
 
 APP_DESTINATION="$app_bundle" OLLAMA_MONITOR_URL="$monitor_url" "$repo_root/launcher/build-app.sh"
+rm -rf "$legacy_app_bundle"
 
 launchctl enable "$domain/$monitor_service_label"
 launchctl bootstrap "$domain" "$launch_agent"
 launchctl kickstart -k "$domain/$monitor_service_label"
 
-printf '\nOllama Monitor installed.\n'
+printf '\nSaxjax Monitor installed.\n'
 printf 'App:       %s\n' "$app_bundle"
 printf 'Dashboard: %s\n' "$monitor_url"
 printf 'Gateway:   http://127.0.0.1:%s\n' "$monitor_port"

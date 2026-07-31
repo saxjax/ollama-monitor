@@ -1,4 +1,4 @@
-# Ollama Monitor
+# Saxjax Monitor for Ollama
 
 A local, dependency-free macOS dashboard for Ollama inference traffic and
 machine health. It shows prompts and streamed responses, context use, loaded
@@ -26,9 +26,9 @@ cd ollama-monitor
 
 The installer derives every path from the current user and checkout. It creates:
 
-- `~/Applications/Ollama Monitor.app`
+- `~/Applications/Saxjax Monitor.app`
 - `~/Library/LaunchAgents/io.github.saxjax.ollama-monitor.plist`
-- `~/Library/Application Support/Ollama Monitor/traffic.jsonl` when requests finish
+- `~/Library/Application Support/Saxjax Monitor/traffic.jsonl` when requests finish
 
 Configuration variables can be supplied to the installer and are persisted in
 the generated LaunchAgent. For example:
@@ -37,7 +37,7 @@ the generated LaunchAgent. For example:
 MONITOR_PORT=12435 OLLAMA_POWER_MODE=off ./install.sh
 ```
 
-Open **Ollama Monitor** from Applications, Spotlight, or the Dock. The native
+Open **Saxjax Monitor** from Applications, Spotlight, or the Dock. The native
 bar can be dragged, and **WIDGET** switches to an always-on-top compact window.
 
 ## Use
@@ -109,7 +109,7 @@ Rebuild the launcher with:
 ./launcher/build-app.sh
 ```
 
-Run the capture smoke test while Ollama Monitor is running:
+Run the capture smoke test while Saxjax Monitor is running:
 
 ```bash
 ./test-capture.sh

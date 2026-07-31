@@ -608,7 +608,7 @@ function getMachineName() {
       run("/usr/sbin/scutil", ["--get", "LocalHostName"]),
       run("/usr/sbin/scutil", ["--get", "ComputerName"]),
     ]);
-    return localHostName || computerName || os.hostname().replace(/\.local$/i, "") || "Ollama Monitor";
+    return localHostName || computerName || os.hostname().replace(/\.local$/i, "") || "Saxjax Monitor";
   })();
   return machineNamePromise;
 }

@@ -217,6 +217,31 @@ function renderMetrics(metrics) {
   $("#model-context").textContent = model?.context ? `${model.context.toLocaleString()} context` : "— context";
 }
 
+function renderCopilotUsage(usage) {
+  if (!usage) return;
+  const panel = $("#copilot-usage");
+  panel.dataset.status = usage.status || "unconfigured";
+  $("#copilot-credits").textContent = Number.isFinite(usage.usedCredits)
+    ? usage.usedCredits.toLocaleString()
+    : "—";
+  $("#copilot-caption").textContent = usage.status === "ready"
+    ? `AI CREDITS · ${usage.period || "CURRENT PERIOD"}`
+    : usage.status.toUpperCase();
+  $("#copilot-cost").textContent = Number.isFinite(usage.estimatedCost)
+    ? `$${usage.estimatedCost.toFixed(2)} billed`
+    : "— cost";
+  $("#copilot-updated").textContent = usage.updatedAt
+    ? `${new Date(usage.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} updated`
+    : "— updated";
+  $("#copilot-detail").textContent = usage.status === "ready"
+    ? `${usage.user} via ${usage.owner} · ${usage.billableCredits.toLocaleString()} billable · ${usage.models.length} models`
+    : usage.detail || "Copilot usage is unavailable.";
+  const actions = $("#copilot-actions");
+  actions.hidden = usage.status === "ready" || usage.status === "loading";
+  $("#copilot-token-status").href = usage.tokenStatusUrl || "https://github.com/settings/personal-access-tokens";
+  $("#copilot-token-create").href = usage.tokenUrl || "https://github.com/settings/personal-access-tokens/new";
+}
+
 serverState.addEventListener("click", async () => {
   if (ollamaControlPending) return;
   const enable = serverState.dataset.online !== "true";
@@ -477,6 +502,7 @@ const eventSource = new EventSource("/monitor/events");
 eventSource.addEventListener("state", (event) => {
   const state = JSON.parse(event.data);
   renderMetrics(state.metrics);
+  renderCopilotUsage(state.copilot);
   $("#total-count").textContent = state.counters.total;
   $("#error-count").textContent = state.counters.errors;
   [...state.active]
@@ -489,6 +515,7 @@ eventSource.addEventListener("state", (event) => {
   }
 });
 eventSource.addEventListener("metrics", (event) => renderMetrics(JSON.parse(event.data)));
+eventSource.addEventListener("copilot", (event) => renderCopilotUsage(JSON.parse(event.data)));
 eventSource.addEventListener("request-started", (event) => {
   const item = JSON.parse(event.data);
   const element = ensureExchange(item, true);

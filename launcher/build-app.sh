@@ -31,6 +31,7 @@ mkdir -p "$macos_dir" "$resources_dir"
 /bin/rm -rf "$runtime_dir"
 /bin/mkdir -p "$runtime_dir"
 /bin/cp "$repo_root/gateway.mjs" "$runtime_dir/gateway.mjs"
+/bin/cp "$repo_root/copilot-usage.mjs" "$runtime_dir/copilot-usage.mjs"
 /bin/cp -R "$repo_root/public" "$runtime_dir/public"
 /usr/bin/codesign --force --deep --sign - "$app_bundle"
 

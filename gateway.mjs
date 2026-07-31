@@ -9,12 +9,14 @@ import { appendFile, access, mkdir, readFile, unlink } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createCopilotUsageMonitor } from "./copilot-usage.mjs";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, "public");
 const dataDir = process.env.MONITOR_DATA_DIR || path.join(here, "data");
 const trafficLog = path.join(dataDir, "traffic.jsonl");
+const copilotConfig = process.env.COPILOT_CONFIG || path.join(dataDir, "copilot.json");
 const listenHost = process.env.MONITOR_HOST || "127.0.0.1";
 const listenPort = Number(process.env.MONITOR_PORT || 11435);
 const proxyHost = process.env.PROXY_HOST || "";
@@ -49,6 +51,7 @@ async function loadHistory() {
 const subscribers = new Set();
 const requests = new Map();
 const history = await loadHistory();
+const copilotUsage = createCopilotUsageMonitor({ configPath: copilotConfig });
 const counters = {
   total: history.length,
   errors: history.filter((item) => item.status === "error").length,
@@ -115,6 +118,7 @@ function initialState() {
     active: [...requests.values()].map(requestSnapshot),
     history: history.map(requestSnapshot),
     counters: { ...counters },
+    copilot: copilotUsage.snapshot(),
   };
 }
 
@@ -839,12 +843,20 @@ async function refreshMetrics() {
   return latestMetrics;
 }
 
+async function refreshCopilotUsage() {
+  const usage = await copilotUsage.refresh();
+  sendEvent("copilot", usage);
+  return usage;
+}
+
 await refreshMetrics();
 console.log(JSON.stringify({
   event: "hardware-topology-detected",
   ...latestMetrics?.system?.hardware,
 }));
 setInterval(() => void refreshMetrics(), 2_000).unref();
+void refreshCopilotUsage();
+setInterval(() => void refreshCopilotUsage(), 5 * 60_000).unref();
 
 server.listen(listenPort, listenHost, () => {
   console.log(`Ollama monitor: http://${listenHost}:${listenPort}/monitor/`);

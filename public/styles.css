@@ -167,6 +167,17 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #bdc6be;
 .facts div { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dotted var(--line); font-size: 9px; }
 .facts span { color: var(--muted); text-transform: uppercase; }
 .facts b { font-weight: 500; }
+.copilot-usage { margin: 0 22px 18px; padding: 16px; border: 1px solid var(--line); background: rgba(86,242,196,.025); }
+.copilot-usage strong { display: block; margin-top: 7px; font-family: var(--display); font-size: 40px; font-weight: 400; line-height: 1; }
+.copilot-usage > small { color: var(--muted); font-size: 8px; letter-spacing: .1em; }
+.copilot-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
+.copilot-usage p { min-height: 2.8em; margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.copilot-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.copilot-actions[hidden] { display: none; }
+.copilot-actions a { padding: 7px 8px; color: var(--cyan); border: 1px solid rgba(86,242,196,.28); font-size: 8px; text-decoration: none; text-transform: uppercase; letter-spacing: .06em; }
+.copilot-actions a:hover, .copilot-actions a:focus-visible { color: var(--paper); border-color: var(--cyan); outline: none; }
+.copilot-usage[data-status="ready"] { border-color: rgba(86,242,196,.38); }
+.copilot-usage[data-status="error"] { border-color: rgba(255,95,87,.45); }
 .privacy-note { margin: 12px 22px 22px; padding: 16px; border-left: 2px solid var(--amber); background: rgba(255,176,0,.045); }
 .privacy-note span { color: var(--amber); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
 .privacy-note p { color: var(--muted); font-size: 9px; line-height: 1.6; }

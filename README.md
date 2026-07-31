@@ -45,6 +45,24 @@ MONITOR_PORT=12435 OLLAMA_POWER_MODE=off ./install.sh
 Open **Saxjax Monitor** from Applications, Spotlight, or the Dock. The native
 bar can be dragged, and **WIDGET** switches to an always-on-top compact window.
 
+### GitHub Copilot credit usage
+
+The dashboard can also show monthly GitHub Copilot AI-credit usage for either
+an organization-billed seat or a personally billed subscription. Create a
+fine-grained personal access token with **Administration: read** organization
+permission, or **Plan: read** user permission, then run:
+
+```bash
+./configure-copilot.sh organization YOUR_ORG YOUR_GITHUB_USERNAME
+# or: ./configure-copilot.sh user YOUR_USERNAME
+```
+
+The script prompts for the token and stores it in macOS Keychain. Only the
+billing scope and owner are stored in Application Support. Re-run the command
+to switch accounts, or use `./configure-copilot.sh --disable` to hide usage.
+When access fails, the dashboard links to the token-status page and to a
+prefilled replacement-token form with the required read-only permission.
+
 ## Use
 
 The safe default does not replace or reconfigure Ollama. Ollama keeps its normal

@@ -18,6 +18,7 @@ default_data_dir="$HOME/Library/Application Support/Saxjax Monitor"
 data_dir="${MONITOR_DATA_DIR:-$default_data_dir}"
 app_bundle="$HOME/Applications/Saxjax Monitor.app"
 legacy_app_bundle="$HOME/Applications/Ollama Monitor.app"
+runtime_gateway="$app_bundle/Contents/Resources/runtime/gateway.mjs"
 launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 monitor_host="${MONITOR_HOST:-127.0.0.1}"
 monitor_port="${MONITOR_PORT:-11435}"
@@ -39,13 +40,14 @@ listener_pids() {
 }
 
 clear_stale_monitor_listener() {
-  local expected_command="$node_bin $repo_root/gateway.mjs"
+  local expected_command="$node_bin $runtime_gateway"
+  local legacy_command="$node_bin $repo_root/gateway.mjs"
   local pid command
 
   while IFS= read -r pid; do
     [[ -z "$pid" ]] && continue
     command="$(/bin/ps -p "$pid" -o command= 2>/dev/null || true)"
-    if [[ "$command" != "$expected_command" ]]; then
+    if [[ "$command" != "$expected_command" && "$command" != "$legacy_command" ]]; then
       printf 'Cannot install: port %s is already used by PID %s (%s).\n' \
         "$monitor_port" "$pid" "${command:-unknown process}" >&2
       printf 'Stop that process or choose another port with MONITOR_PORT.\n' >&2
@@ -118,7 +120,7 @@ rm -f "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :Label string $monitor_service_label" "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :ProgramArguments array" "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :ProgramArguments:0 string $node_bin" "$launch_agent"
-/usr/libexec/PlistBuddy -c "Add :ProgramArguments:1 string $repo_root/gateway.mjs" "$launch_agent"
+/usr/libexec/PlistBuddy -c "Add :ProgramArguments:1 string $runtime_gateway" "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:MONITOR_HOST string $monitor_host" "$launch_agent"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:MONITOR_PORT string $monitor_port" "$launch_agent"

@@ -14,7 +14,7 @@ validated web prototype described in [Native SwiftUI roadmap](NATIVE-SWIFTUI-ROA
 - macOS 13 or newer
 - [Ollama](https://ollama.com/)
 - Node.js 18 or newer
-- Xcode Command Line Tools (for the optional native launcher)
+- Xcode Command Line Tools (the installer builds the native launcher locally)
 
 ## Install
 
@@ -29,6 +29,11 @@ The installer derives every path from the current user and checkout. It creates:
 - `~/Applications/Saxjax Monitor.app`
 - `~/Library/LaunchAgents/io.github.saxjax.ollama-monitor.plist`
 - `~/Library/Application Support/Saxjax Monitor/traffic.jsonl` when requests finish
+
+The installed app is self-contained: it includes the gateway and dashboard
+assets used by the LaunchAgent. After installation, the cloned repository can
+be moved or removed without breaking Saxjax Monitor. Node.js remains an external
+runtime dependency and must stay available at the path recorded during install.
 
 Configuration variables can be supplied to the installer and are persisted in
 the generated LaunchAgent. For example:
@@ -81,7 +86,7 @@ The gateway accepts these environment variables:
 | --- | --- | --- |
 | `MONITOR_HOST` | `127.0.0.1` | Dashboard and monitored gateway bind address |
 | `MONITOR_PORT` | `11435` | Dashboard and monitored gateway port |
-| `MONITOR_DATA_DIR` | repository `data/` | Private history directory |
+| `MONITOR_DATA_DIR` | Application Support when installed; repository `data/` when run manually | Private history directory |
 | `OLLAMA_UPSTREAM` | `http://127.0.0.1:11434` | Ollama server receiving proxied requests |
 | `OLLAMA_BIN` | auto-detected | Explicit path to the Ollama CLI |
 | `OLLAMA_POWER_MODE` | `app` | `app`, `launchagent`, or `off` |
@@ -103,7 +108,7 @@ its standard port is an advanced configuration.
 node gateway.mjs
 ```
 
-Rebuild the launcher with:
+Rebuild the self-contained launcher with:
 
 ```bash
 ./launcher/build-app.sh

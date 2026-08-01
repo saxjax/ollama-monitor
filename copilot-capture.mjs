@@ -93,7 +93,69 @@ function renderedContext(metadata) {
   };
 }
 
-function normalizeVsCodeRequest(edition, sessionId, request, sessionState = {}) {
+function priorVsCodeTurns(sessionState, request) {
+  const currentTime = Number(request.timestamp) || Number.POSITIVE_INFINITY;
+  return (sessionState.requests || [])
+    .filter((entry) => entry !== request && entry.requestId !== request.requestId && (Number(entry.timestamp) || 0) <= currentTime)
+    .map((entry) => {
+      const output = vsCodeResponse(entry);
+      return {
+        requestId: entry.requestId,
+        submitted: valueText(entry.message?.text ?? entry.message),
+        response: output.response,
+        thinking: output.thinking,
+        tools: output.tools,
+        summary: entry.result?.metadata?.summary ?? entry.result?.metadata?.summaries,
+      };
+    });
+}
+
+function reconstructedVsCodeContext(request, sessionState, rendered) {
+  const metadata = request.result?.metadata || {};
+  const turns = priorVsCodeTurns(sessionState, request);
+  const sections = [
+    ...turns.flatMap((turn, index) => [
+      section(`PREVIOUS TURN ${index + 1} · USER`, turn.submitted),
+      section(`PREVIOUS TURN ${index + 1} · ASSISTANT`, turn.response),
+      section(`PREVIOUS TURN ${index + 1} · REASONING`, turn.thinking),
+      section(`PREVIOUS TURN ${index + 1} · TOOLS`, turn.tools),
+      section(`PREVIOUS TURN ${index + 1} · SUMMARY`, turn.summary),
+    ]),
+    section("MODE INSTRUCTIONS", request.modeInfo?.modeInstructions),
+    section("RENDERED USER MESSAGE", rendered?.user || []),
+    section("SUBMITTED USER MESSAGE", valueText(request.message?.text ?? request.message)),
+    section("VARIABLE DATA", request.variableData?.variables),
+    section("CONTENT REFERENCES", request.contentReferences),
+    section("CODE CITATIONS", request.codeCitations),
+    section("COMPACTION SUMMARY", metadata.summary),
+    section("COMPACTION SUMMARIES", metadata.summaries),
+    section("CODE BLOCKS", metadata.codeBlocks),
+    section("TOOL CALL ROUNDS", metadata.toolCallRounds),
+    section("TOOL CALL RESULTS", metadata.toolCallResults),
+    section("AGENT AND MODE", { agent: request.agent, mode: request.modeInfo }),
+    section("EDITED FILE EVENTS", request.editedFileEvents),
+  ].filter(Boolean);
+  return {
+    text: sections.join("\n\n"),
+    context: {
+      previousTurns: turns,
+      renderedUser: rendered?.user || [],
+      modeInfo: request.modeInfo || null,
+      variables: request.variableData?.variables || [],
+      contentReferences: request.contentReferences || [],
+      codeCitations: request.codeCitations || [],
+      summary: metadata.summary || null,
+      summaries: metadata.summaries || [],
+      codeBlocks: metadata.codeBlocks || [],
+      toolCallRounds: metadata.toolCallRounds || [],
+      toolCallResults: metadata.toolCallResults || [],
+      agent: request.agent || null,
+      editedFileEvents: request.editedFileEvents || [],
+    },
+  };
+}
+
+export function normalizeVsCodeRequest(edition, sessionId, request, sessionState = {}) {
   const source = edition === "vscode-insiders" ? "vscode-insiders" : "vscode";
   const id = `${source}-${sessionId}-${request.requestId || request.responseId || request.timestamp}`;
   const message = valueText(request.message?.text ?? request.message);
@@ -105,7 +167,9 @@ function normalizeVsCodeRequest(edition, sessionId, request, sessionState = {}) 
     : "";
   const output = vsCodeResponse(request);
   const resultMetadata = request.result?.metadata || {};
-  const exactContext = renderedContext(resultMetadata);
+  const rendered = renderedContext(resultMetadata);
+  const exactContext = rendered?.global.length ? rendered : null;
+  const localContext = exactContext ? null : reconstructedVsCodeContext(request, sessionState, rendered);
   const selectedModel = sessionState.inputState?.selectedModel;
   const contextWindow = selectedModel?.identifier === request.modelId
     ? selectedModel.metadata?.maxInputTokens
@@ -122,13 +186,13 @@ function normalizeVsCodeRequest(edition, sessionId, request, sessionState = {}) 
     sessionId,
     interactionId: request.requestId || id,
     model: request.modelId || "GitHub Copilot",
-    prompt: exactContext?.text || `${message}${context}${attachments}`,
+    prompt: exactContext?.text || localContext?.text || `${message}${context}${attachments}`,
     submittedPrompt: message,
-    inputContext: exactContext ? { global: exactContext.global, user: exactContext.user } : null,
-    inputContextStatus: exactContext ? "client-rendered" : "reconstructed",
+    inputContext: exactContext ? { global: exactContext.global, user: exactContext.user } : localContext?.context || null,
+    inputContextStatus: exactContext ? "client-rendered" : "reconstructed-local",
     messages: exactContext
       ? [{ role: "copilot rendered context", content: exactContext.text }]
-      : [{ role: "user", content: `${message}${context}${attachments}` }],
+      : [{ role: "locally reconstructed VS Code context", content: localContext?.text || `${message}${context}${attachments}` }],
     ...output,
     startedAt: new Date(request.timestamp || Date.now()).toISOString(),
     finishedAt: complete ? new Date(completedAt || Date.now()).toISOString() : null,

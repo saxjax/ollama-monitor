@@ -237,6 +237,20 @@
             <p>When GitHub billing is unavailable, paid values are marked <strong>≈ LOCAL ESTIMATE</strong> and use only Copilot traffic observed on this Mac. Clear view deletes the monitor’s local copies, not the source client histories.</p>
             <div class="help-links"><a href="https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing" target="_blank" rel="noreferrer">Model pricing</a><a href="https://docs.github.com/en/copilot/tutorials/optimize-ai-usage" target="_blank" rel="noreferrer">Optimize usage</a></div>
           </details>
+          <details>
+            <summary>05 · How to read the monitor</summary>
+            <p><strong>PAID · GITHUB COPILOT</strong> contains Copilot credits, billed dollars, and Copilot-only input/output tokens. <strong>LOCAL / FREE · OLLAMA</strong> contains Ollama tokens and is never included in Copilot billing.</p>
+            <p>Exact values come from the client or GitHub. Values prefixed with <strong>≈</strong> are estimates. VS Code can provide client-rendered context; Copilot CLI context may be reconstructed from its transcript. Server-only additions and cache accounting may not be visible locally.</p>
+            <p>The velocity panel uses recent Copilot traffic. GitHub billing is the budget baseline when available; otherwise the entire paid estimate is local. Runway and parallel capacity describe a budget burn-rate scenario, not a technical concurrency limit.</p>
+          </details>
+          <details>
+            <summary>06 · Install, update, and troubleshoot</summary>
+            <div class="help-code"><code>./install.sh</code><button class="copy-help" type="button" data-copy="./install.sh">COPY</button></div>
+            <p>Installation builds the self-contained app in <code>~/Applications/Saxjax Monitor.app</code> and registers a LaunchAgent. After updating the checkout, run the installer again, then quit and reopen the app from Applications or Spotlight.</p>
+            <ul class="help-list"><li><strong>No Spotlight app:</strong> rerun <code>./install.sh</code>, then reopen Spotlight and search “Saxjax Monitor”.</li><li><strong>No Ollama traffic:</strong> confirm the client uses port <code>11435</code> and Ollama itself remains available on <code>11434</code>.</li><li><strong>No Copilot traffic:</strong> keep the monitor running and start a new CLI/editor request; existing sessions are not imported at startup.</li><li><strong>No billing:</strong> review the token link in the Copilot panel and verify the required read-only permission.</li></ul>
+            <p class="help-note">Use <strong>Clear view</strong> to delete monitor-owned history. It does not erase the original Copilot CLI, VS Code, VS Code Insiders, or Ollama source history.</p>
+            <div class="help-links"><a href="http://127.0.0.1:11435/monitor/" target="_blank" rel="noreferrer">Reload dashboard</a><a href="https://github.com/saxjax/ollama-monitor" target="_blank" rel="noreferrer">Project repository</a></div>
+          </details>
         </div>
         <footer class="help-footer"><span>ESC TO CLOSE</span><span>ALL PROMPT DATA STAYS LOCAL</span></footer>
       </div>

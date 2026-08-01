@@ -3,7 +3,44 @@ import { appendFile, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/p
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createCopilotCapture } from "./copilot-capture.mjs";
+import { createCopilotCapture, normalizeVsCodeRequest } from "./copilot-capture.mjs";
+
+test("reconstructs all locally recorded VS Code context when a rendered global context is unavailable", () => {
+  const previous = {
+    requestId: "previous", timestamp: 1, modelId: "copilot-test",
+    message: { text: "previous developer request" },
+    response: [{ value: "previous assistant response" }],
+    modelState: { completedAt: 2 }, result: { metadata: {} },
+  };
+  const current = {
+    requestId: "current", timestamp: 3, modelId: "copilot-test",
+    message: { text: "one-word continuation" },
+    modeInfo: { modeInstructions: "local mode instructions" },
+    variableData: { variables: [{ name: "selection", value: "full selected file context" }] },
+    contentReferences: [{ reference: "full referenced file context" }],
+    response: [], modelState: { completedAt: 4 },
+    result: { metadata: {
+      renderedUserMessage: [{ type: "user", text: "rendered one-word continuation" }],
+      summary: { text: "summarized prior context" },
+      summaries: [{ text: "additional compacted context" }],
+      codeBlocks: [{ code: "full code block context" }],
+      toolCallRounds: [{ input: "tool input context", result: "tool result context" }],
+    } },
+  };
+  const item = normalizeVsCodeRequest("vscode", "chat-1", current, { requests: [previous, current] });
+  assert.equal(item.inputContextStatus, "reconstructed-local");
+  assert.match(item.prompt, /PREVIOUS TURN/);
+  assert.match(item.prompt, /previous developer request/);
+  assert.match(item.prompt, /previous assistant response/);
+  assert.match(item.prompt, /MODE INSTRUCTIONS/);
+  assert.match(item.prompt, /local mode instructions/);
+  assert.match(item.prompt, /VARIABLE DATA/);
+  assert.match(item.prompt, /full selected file context/);
+  assert.match(item.prompt, /CONTENT REFERENCES/);
+  assert.match(item.prompt, /summarized prior context/);
+  assert.match(item.prompt, /full code block context/);
+  assert.match(item.prompt, /tool result context/);
+});
 
 test("captures only new Copilot CLI turns and clears its private local copy", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "copilot-capture-"));

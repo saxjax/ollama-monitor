@@ -51,6 +51,9 @@ bar can be dragged, and **WIDGET** switches to an always-on-top compact window.
 Use the clickable **?** in the dashboard header for an interactive setup guide
 with Ollama gateway commands, Copilot CLI/VS Code capture locations, GitHub token
 permissions, direct documentation links, and copy buttons for setup commands.
+It also explains exact versus estimated values, paid versus local/free tokens,
+fallback billing, velocity/runway metrics, installation updates, Clear View, and
+common troubleshooting steps.
 
 ### GitHub Copilot credit usage
 
@@ -139,6 +142,13 @@ request completes. The raw structured parts are retained in the private monitor
 history together with the separately submitted chat prompt. This represents the
 complete input rendered by the local Copilot extension; instructions added only
 after the request reaches GitHub's servers are not observable on the Mac.
+
+When VS Code does not retain `renderedGlobalContext`, the **IN** viewer is
+labelled **LOCALLY RECONSTRUCTED INPUT**. It includes every locally recorded
+context contribution: prior turns, summaries, mode instructions, variables,
+references, code blocks, tool rounds/results, agent data, and edited-file events.
+This makes accumulated and repeated material inspectable, but it is not labelled
+as the exact server message array because VS Code did not preserve that array.
 
 For Copilot CLI, the **IN** viewer reconstructs the request context from the
 full `system.message` recorded for the interaction, its `transformedContent`

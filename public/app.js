@@ -696,10 +696,10 @@ stream.addEventListener("click", (event) => {
   contentReader.querySelector(".reader-shell").dataset.kind = kind;
   const inputStatus = exchange.dataset.inputContextStatus;
   $("#reader-direction").textContent = kind === "in"
-    ? inputStatus === "client-rendered" ? "COPILOT-RENDERED INPUT" : "INCOMING CONTEXT"
+    ? inputStatus === "client-rendered" ? "COPILOT-RENDERED INPUT" : inputStatus === "reconstructed-local" ? "LOCALLY RECONSTRUCTED INPUT" : "INCOMING CONTEXT"
     : "MODEL OUTPUT";
   $("#reader-title").textContent = kind === "in"
-    ? inputStatus === "client-rendered" ? "Exact local rendered context" : "Context at request time"
+    ? inputStatus === "client-rendered" ? "Exact local rendered context" : inputStatus === "reconstructed-local" ? "All locally recorded VS Code context" : "Context at request time"
     : "Complete response";
   $("#reader-model").textContent = model;
   $("#reader-time").textContent = time;

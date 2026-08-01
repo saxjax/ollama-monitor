@@ -222,25 +222,133 @@ function renderCopilotUsage(usage) {
   const panel = $("#copilot-usage");
   panel.dataset.status = usage.status || "unconfigured";
   $("#copilot-credits").textContent = Number.isFinite(usage.usedCredits)
-    ? usage.usedCredits.toLocaleString()
+    ? `${usage.usageEstimate ? "≈" : ""}${usage.usedCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })}`
     : "—";
   $("#copilot-caption").textContent = usage.status === "ready"
     ? `AI CREDITS · ${usage.period || "CURRENT PERIOD"}`
+    : usage.status === "estimated" ? "AI CREDITS · LOCAL ESTIMATE"
     : usage.status.toUpperCase();
   $("#copilot-cost").textContent = Number.isFinite(usage.estimatedCost)
-    ? `$${usage.estimatedCost.toFixed(2)} billed`
+    ? `${usage.usageEstimate ? "≈" : ""}$${usage.estimatedCost.toFixed(2)} ${usage.usageEstimate ? "estimated" : "billed"}`
     : "— cost";
   $("#copilot-updated").textContent = usage.updatedAt
     ? `${new Date(usage.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} updated`
     : "— updated";
+  $("#copilot-input-tokens").textContent = Number.isFinite(usage.observedInputTokens)
+    ? `${usage.observedInputTokensEstimated ? "≈" : ""}${usage.observedInputTokens.toLocaleString()}`
+    : "—";
+  $("#copilot-output-tokens").textContent = Number.isFinite(usage.observedOutputTokens)
+    ? `${usage.observedOutputTokensEstimated ? "≈" : ""}${usage.observedOutputTokens.toLocaleString()}`
+    : "—";
+  $("#ollama-input-tokens").textContent = Number.isFinite(usage.ollamaInputTokens)
+    ? usage.ollamaInputTokens.toLocaleString()
+    : "—";
+  $("#ollama-output-tokens").textContent = Number.isFinite(usage.ollamaOutputTokens)
+    ? usage.ollamaOutputTokens.toLocaleString()
+    : "—";
+  const budgetPercent = Number.isFinite(usage.budgetUsedPercent) ? usage.budgetUsedPercent : null;
+  setDial("budget", budgetPercent);
+  const budgetDial = $("#budget-dial");
+  budgetDial.dataset.configured = String(Number.isFinite(usage.monthlyBudgetUsd));
+  budgetDial.classList.toggle("warning", budgetPercent != null && budgetPercent >= 75 && budgetPercent < 100);
+  budgetDial.classList.toggle("danger", budgetPercent != null && budgetPercent >= 100);
+  $("#budget-detail").textContent = Number.isFinite(usage.monthlyBudgetUsd)
+    ? `${usage.usageEstimate ? "≈" : ""}$${Number(usage.estimatedCost || 0).toFixed(2)} / $${usage.monthlyBudgetUsd.toFixed(2)}`
+    : "SET IN COPILOT PANEL";
+  const budgetInput = $("#copilot-budget-input");
+  if (document.activeElement !== budgetInput) {
+    budgetInput.value = Number.isFinite(usage.monthlyBudgetUsd) ? usage.monthlyBudgetUsd.toFixed(2) : "";
+  }
+  const tokenPriceInput = $("#copilot-token-price-input");
+  if (document.activeElement !== tokenPriceInput) {
+    tokenPriceInput.value = Number.isFinite(usage.tokenPriceUsdPerMillion) ? usage.tokenPriceUsdPerMillion : "";
+  }
   $("#copilot-detail").textContent = usage.status === "ready"
     ? `${usage.user} via ${usage.owner} · ${usage.billableCredits.toLocaleString()} billable · ${usage.models.length} models`
     : usage.detail || "Copilot usage is unavailable.";
+  const forecastPanel = $("#copilot-forecast");
+  const forecast = usage.forecast;
+  forecastPanel.hidden = !forecast?.requestCount;
+  if (!forecastPanel.hidden) {
+    $("#copilot-forecast-title").textContent = usage.status === "ready"
+      ? "PAID COPILOT VELOCITY · GITHUB BASELINE + LOCAL SAMPLE"
+      : "PAID COPILOT VELOCITY · LOCAL ESTIMATE";
+    $("#copilot-velocity").textContent = `≈${forecast.creditsPerDay.toFixed(1)} credits/day`;
+    $("#copilot-projection").textContent = `≈${forecast.projectedMonthCredits.toFixed(0)} credits`;
+    $("#copilot-runway").textContent = Number.isFinite(forecast.daysUntilExhausted)
+      ? forecast.daysUntilExhausted <= 0 ? "Budget exhausted" : `≈${forecast.daysUntilExhausted.toFixed(1)} days`
+      : "Set a budget";
+    $("#copilot-parallel").textContent = Number.isFinite(forecast.sustainableParallelFactor)
+      ? forecast.sustainableParallelFactor < 1
+        ? `Reduce to ≈${Math.max(0, forecast.sustainableParallelFactor).toFixed(1)}× velocity`
+        : `Up to ≈${forecast.sustainableParallelFactor.toFixed(1)}× velocity`
+      : "Set a budget";
+    $("#copilot-confidence").textContent = [
+      `${forecast.requestCount} locally observed requests over ${forecast.observationHours.toFixed(1)} hours.`,
+      forecast.authoritativeBaseline ? "Runway starts from GitHub's authoritative billed spend; velocity comes from local Copilot traffic." : "Billing and velocity are locally estimated because GitHub usage is unavailable.",
+      forecast.customTokenPrice
+        ? `Custom price $${forecast.tokenPriceUsdPerMillion}/1M tokens is applied to local Copilot traffic.`
+        : forecast.estimatedRecords ? `${forecast.estimatedRecords} requests use estimated tokens or conservative model pricing.` : "Observed token counts and known model prices used.",
+      "Ollama tokens are excluded. Parallel work is a paid Copilot burn-rate scenario, not a concurrency guarantee.",
+    ].join(" ");
+  }
   const actions = $("#copilot-actions");
   actions.hidden = usage.status === "ready" || usage.status === "loading";
   $("#copilot-token-status").href = usage.tokenStatusUrl || "https://github.com/settings/personal-access-tokens";
   $("#copilot-token-create").href = usage.tokenUrl || "https://github.com/settings/personal-access-tokens/new";
 }
+
+$("#copilot-budget-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const status = $("#copilot-budget-status");
+  const monthlyBudgetUsd = Number($("#copilot-budget-input").value);
+  button.disabled = true;
+  status.textContent = "Saving local budget…";
+  try {
+    const response = await fetch("/monitor/api/copilot-budget", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ monthlyBudgetUsd }),
+    });
+    const usage = await response.json();
+    if (!response.ok) throw new Error(usage.error || `HTTP ${response.status}`);
+    renderCopilotUsage(usage);
+    status.textContent = monthlyBudgetUsd ? "Monthly budget saved on this Mac." : "Monthly budget removed.";
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#copilot-token-price-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const status = $("#copilot-token-price-status");
+  const tokenPriceUsdPerMillion = Number($("#copilot-token-price-input").value);
+  button.disabled = true;
+  status.textContent = "Saving local token price…";
+  try {
+    const response = await fetch("/monitor/api/copilot-token-price", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tokenPriceUsdPerMillion }),
+    });
+    const usage = await response.json();
+    if (!response.ok) throw new Error(usage.error || `HTTP ${response.status}`);
+    renderCopilotUsage(usage);
+    status.textContent = tokenPriceUsdPerMillion
+      ? `Using $${tokenPriceUsdPerMillion}/1M tokens for local Copilot estimates.`
+      : "Using published per-model rates.";
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 serverState.addEventListener("click", async () => {
   if (ollamaControlPending) return;
@@ -382,13 +490,15 @@ function ensureExchange(item, prepend = true) {
   element.dataset.id = item.id;
   element.dataset.model = item.model || "";
   element.dataset.sessionId = session.id;
+  element.dataset.source = item.source || "ollama";
   element.style.setProperty("--session-color", session.color);
   element.dataset.estimatedInputTokens = String(
     estimateTokens(inputTranscript(item).length, item.messages?.length || 0),
   );
   element.querySelector(".exchange-model").textContent = item.model || "unknown model";
   const sessionBadge = element.querySelector(".session-badge");
-  sessionBadge.textContent = session.label.replace(/^Session\s+/i, "S/");
+  const sourceLabel = String(item.sourceLabel || item.source || "Ollama").toLocaleUpperCase();
+  sessionBadge.textContent = `${sourceLabel} · ${session.label.replace(/^Session\s+/i, "S/")}`;
   sessionBadge.title = `${session.label} · ${session.source} identity`;
   element.querySelector("time").textContent = new Date(item.startedAt).toLocaleTimeString();
   element.querySelector(".prompt pre").textContent = inputTranscript(item);
@@ -409,6 +519,10 @@ function ensureExchange(item, prepend = true) {
 function updateExchange(element, item) {
   element.classList.remove("active", "complete", "error");
   element.classList.add(item.status || "active");
+  if (item.prompt != null || item.messages?.length) {
+    element.querySelector(".prompt pre").textContent = inputTranscript(item);
+  }
+  element.dataset.inputContextStatus = item.inputContextStatus || "captured";
   element.querySelector(".exchange-status").textContent = item.status || "active";
   const failure = item.error || (item.status === "error" ? "Request failed without a reported reason." : "");
   if (failure) {
@@ -426,26 +540,37 @@ function updateExchange(element, item) {
   }
   const m = item.metrics;
   if (m) {
+    const estimatedInput = Number(element.dataset.estimatedInputTokens) || 0;
+    const estimatedOutput = estimateTokens(
+      element.querySelector(".response pre").textContent.length +
+      element.querySelector(".thinking pre").textContent.length,
+    );
+    const inputTokens = m.promptTokens ?? estimatedInput;
+    const outputTokens = m.outputTokens ?? estimatedOutput;
     const speed = m.outputTokens && m.outputDurationNs ? m.outputTokens / (m.outputDurationNs / 1e9) : null;
     const tokenStats = element.querySelector(".token-stats");
-    tokenStats.classList.remove("estimated");
+    tokenStats.classList.toggle("estimated", m.promptTokens == null || m.outputTokens == null);
     tokenStats.textContent = [
-      m.promptTokens != null ? `${m.promptTokens} in` : null,
-      m.outputTokens != null ? `${m.outputTokens} out` : null,
-      speed != null ? `${number(speed, 1)} tok/s` : null,
+      inputTokens ? `${m.promptTokens == null ? "≈" : ""}${inputTokens.toLocaleString()} in` : null,
+      outputTokens ? `${m.outputTokens == null ? "≈" : ""}${outputTokens.toLocaleString()} out` : null,
+      speed != null ? `${number(speed, 1)} avg tok/s` : null,
     ].filter(Boolean).join(" · ");
   } else {
     updateLiveTokenEstimate(element, item);
   }
   const contextBox = element.querySelector(".context-usage");
-  const capacity = modelContexts.get(item.model);
-  const used = m?.promptTokens;
+  const isCopilot = item.provider === "github-copilot";
+  const capacity = m?.contextWindow || (isCopilot ? null : modelContexts.get(item.model));
+  const exactUsed = m?.promptTokens;
+  const used = exactUsed ?? (Number(element.dataset.estimatedInputTokens) || null);
   if (used != null && capacity) {
     const percent = (used / capacity) * 100;
-    contextBox.classList.remove("estimated");
+    contextBox.classList.toggle("estimated", exactUsed == null);
     contextBox.style.setProperty("--context-percent", `${Math.min(percent, 100)}%`);
-    contextBox.querySelector(".context-label").textContent = `${used.toLocaleString()} / ${capacity.toLocaleString()} tokens · ${number(percent, 1)}%`;
-    contextBox.querySelector("small").textContent = "Exact input tokens reported by Ollama for this request.";
+    contextBox.querySelector(".context-label").textContent = `${exactUsed == null ? "≈" : ""}${used.toLocaleString()} / ${capacity.toLocaleString()} tokens · ${exactUsed == null ? "≈" : ""}${number(percent, 1)}%`;
+    contextBox.querySelector("small").textContent = exactUsed == null
+      ? "Estimated input tokens versus the context capacity reported by the client."
+      : `Exact input tokens and context capacity reported by ${item.client || "the model client"}.`;
     contextBox.classList.toggle("warning", percent >= 70 && percent < 90);
     contextBox.classList.toggle("danger", percent >= 90);
   } else if (item.status === "error") {
@@ -455,6 +580,13 @@ function updateExchange(element, item) {
     contextBox.querySelector(".context-label").textContent = "Unavailable · request failed";
     contextBox.querySelector("small").textContent =
       "No context usage was reported because this request ended with an error.";
+  } else if (isCopilot) {
+    contextBox.classList.remove("estimated", "warning", "danger", "unavailable");
+    contextBox.style.setProperty("--context-percent", "0%");
+    contextBox.querySelector(".context-label").textContent = used
+      ? `${exactUsed == null ? "≈" : ""}${used.toLocaleString()} input tokens · limit unavailable`
+      : "Context metrics unavailable";
+    contextBox.querySelector("small").textContent = `${item.client || "GitHub Copilot"} did not expose a context-window limit for this request.`;
   } else if (m) {
     contextBox.classList.remove("estimated", "warning", "danger", "unavailable");
     contextBox.querySelector(".context-label").textContent = item.status === "active" ? "Calculating…" : "Not reported";
@@ -492,7 +624,7 @@ function resetHistoryView(state) {
   state.history.forEach((item) => ensureExchange(item, false));
   if (!state.active.length && !state.history.length) {
     const title = state.reason === "cleared" ? "History deleted" : "Listening for inference traffic";
-    showEmptyState(title, "New requests will continue to appear here and remain until you clear them.");
+    showEmptyState(title, "New Ollama and Copilot CLI requests will appear here and remain until you clear them.");
   }
   applySessionFilter(true);
   persistViewState();
@@ -561,8 +693,13 @@ stream.addEventListener("click", (event) => {
   const lineCount = content ? content.split("\n").length : 0;
 
   contentReader.querySelector(".reader-shell").dataset.kind = kind;
-  $("#reader-direction").textContent = kind === "in" ? "INCOMING CONTEXT" : "MODEL OUTPUT";
-  $("#reader-title").textContent = kind === "in" ? "Context at request time" : "Complete response";
+  const inputStatus = exchange.dataset.inputContextStatus;
+  $("#reader-direction").textContent = kind === "in"
+    ? inputStatus === "client-rendered" ? "COPILOT-RENDERED INPUT" : "INCOMING CONTEXT"
+    : "MODEL OUTPUT";
+  $("#reader-title").textContent = kind === "in"
+    ? inputStatus === "client-rendered" ? "Exact local rendered context" : "Context at request time"
+    : "Complete response";
   $("#reader-model").textContent = model;
   $("#reader-time").textContent = time;
   $("#reader-context").textContent = context;

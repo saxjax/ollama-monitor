@@ -10,6 +10,9 @@ import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createCopilotUsageMonitor } from "./copilot-usage.mjs";
+import { createCopilotCapture } from "./copilot-capture.mjs";
+import { captureCounters, captureSnapshot, combineCaptureState, finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
+import { forecastCopilotUsage, summarizeCopilotTokens } from "./copilot-forecast.mjs";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +55,7 @@ const subscribers = new Set();
 const requests = new Map();
 const history = await loadHistory();
 const copilotUsage = createCopilotUsageMonitor({ configPath: copilotConfig });
+let copilotCapture;
 const counters = {
   total: history.length,
   errors: history.filter((item) => item.status === "error").length,
@@ -65,8 +69,11 @@ function queueTrafficFileOperation(operation) {
 }
 
 function refreshCounters() {
-  counters.total = requests.size + history.length;
-  counters.errors = history.filter((item) => item.status === "error").length;
+  const copilot = copilotCapture?.snapshot() || { active: [], history: [] };
+  Object.assign(counters, captureCounters(combineCaptureState(
+    { active: [...requests.values()], history },
+    copilot,
+  )));
 }
 
 function trimHistory() {
@@ -92,40 +99,62 @@ function json(response, status, body) {
 }
 
 function requestSnapshot(item) {
-  return {
-    id: item.id,
-    path: item.path,
-    model: item.model,
-    prompt: item.prompt,
-    messages: item.messages,
-    response: item.response,
-    thinking: item.thinking,
-    client: item.client,
-    clientAddress: item.clientAddress,
-    session: item.session,
-    error: item.error,
-    startedAt: item.startedAt,
-    finishedAt: item.finishedAt,
-    status: item.status,
-    httpStatus: item.httpStatus,
-    metrics: item.metrics,
-  };
+  return captureSnapshot(normalizeCaptureRecord(item));
 }
 
 function initialState() {
+  const copilotTraffic = copilotCapture?.snapshot() || { active: [], history: [] };
+  const traffic = combineCaptureState(
+    { active: [...requests.values()].map(requestSnapshot), history: history.map(requestSnapshot) },
+    { active: copilotTraffic.active.map(requestSnapshot), history: copilotTraffic.history.map(requestSnapshot) },
+  );
   return {
     metrics: latestMetrics,
-    active: [...requests.values()].map(requestSnapshot),
-    history: history.map(requestSnapshot),
+    ...traffic,
     counters: { ...counters },
-    copilot: copilotUsage.snapshot(),
+    copilot: copilotDashboardState(copilotUsage.snapshot()),
+  };
+}
+
+function copilotDashboardState(usage) {
+  const traffic = copilotCapture?.snapshot() || { active: [], history: [] };
+  const records = [...traffic.active, ...traffic.history].filter((item) => item.provider === "github-copilot");
+  const authoritativeSpend = usage.status === "ready" ? usage.estimatedCost : null;
+  const forecast = forecastCopilotUsage(records, usage.monthlyBudgetUsd, new Date(), authoritativeSpend, usage.tokenPriceUsdPerMillion);
+  const copilotTokens = summarizeCopilotTokens(records);
+  const ollamaRecords = [...requests.values(), ...history];
+  const fallback = usage.status !== "ready" && forecast.requestCount > 0;
+  const estimatedCost = fallback ? forecast.costUsd : usage.estimatedCost;
+  const usedCredits = fallback ? forecast.credits : usage.usedCredits;
+  const monthlyBudgetUsd = usage.monthlyBudgetUsd;
+  return {
+    ...usage,
+    status: fallback ? "estimated" : usage.status,
+    detail: fallback ? "GitHub billing is unavailable; showing a local token-priced estimate." : usage.detail,
+    estimatedCost,
+    usedCredits,
+    budgetUsedPercent: monthlyBudgetUsd && Number.isFinite(estimatedCost) ? (estimatedCost / monthlyBudgetUsd) * 100 : usage.budgetUsedPercent,
+    budgetRemainingUsd: monthlyBudgetUsd && Number.isFinite(estimatedCost) ? Math.max(0, monthlyBudgetUsd - estimatedCost) : usage.budgetRemainingUsd,
+    usageEstimate: fallback,
+    forecast,
+    observedRequests: records.length,
+    observedInputTokens: copilotTokens.inputTokens,
+    observedOutputTokens: copilotTokens.outputTokens,
+    observedInputTokensEstimated: copilotTokens.estimatedInputRecords > 0,
+    observedOutputTokensEstimated: copilotTokens.estimatedOutputRecords > 0,
+    ollamaInputTokens: ollamaRecords.reduce((sum, item) => sum + (Number(item.metrics?.promptTokens) || 0), 0),
+    ollamaOutputTokens: ollamaRecords.reduce((sum, item) => sum + (Number(item.metrics?.outputTokens) || 0), 0),
   };
 }
 
 function historyState(reason) {
+  const copilotTraffic = copilotCapture?.snapshot() || { active: [], history: [] };
+  const traffic = combineCaptureState(
+    { active: [...requests.values()].map(requestSnapshot), history: history.map(requestSnapshot) },
+    { active: copilotTraffic.active.map(requestSnapshot), history: copilotTraffic.history.map(requestSnapshot) },
+  );
   return {
-    active: [...requests.values()].map(requestSnapshot),
-    history: history.map(requestSnapshot),
+    ...traffic,
     counters: { ...counters },
     reason,
   };
@@ -133,14 +162,26 @@ function historyState(reason) {
 
 async function clearHistory() {
   history.splice(0);
-  refreshCounters();
+  await copilotCapture?.clear();
   await queueTrafficFileOperation(() => unlink(trafficLog).catch((error) => {
     if (error.code !== "ENOENT") throw error;
   }));
+  refreshCounters();
   const state = historyState("cleared");
   sendEvent("history-reset", state);
   return state;
 }
+
+copilotCapture = await createCopilotCapture({
+  dataDir,
+  onChange(type, item) {
+    refreshCounters();
+    if (type === "started") sendEvent("request-started", requestSnapshot(item));
+    else sendEvent("request-finished", requestSnapshot(item));
+    sendEvent("copilot", copilotDashboardState(copilotUsage.snapshot()));
+  },
+});
+refreshCounters();
 
 function textContent(value) {
   if (typeof value === "string") return value;
@@ -299,8 +340,7 @@ async function finishRequest(item, parser, error = null) {
     }
   }
 
-  item.finishedAt = new Date().toISOString();
-  item.status = error || item.httpStatus >= 400 ? "error" : "complete";
+  finishCaptureRecord(item, new Date().toISOString(), error || item.httpStatus >= 400 ? "error" : "complete");
   if (error) item.error = `Gateway error: ${error.message}`;
   if (item.status === "error" && !item.error) item.error = fallbackError(item);
   if (item.status === "error" && !item.response.trim()) item.response = `ERROR\n${item.error}`;
@@ -811,6 +851,34 @@ const server = http.createServer(async (request, response) => {
       return json(response, 503, { error: error.message });
     }
   }
+  if (requestUrl.pathname === "/monitor/api/copilot-budget" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) {
+      return json(response, 403, { error: "Copilot budget changes are only available to the local dashboard" });
+    }
+    try {
+      const body = await readJsonRequest(request);
+      const usage = await copilotUsage.setBudget(body.monthlyBudgetUsd);
+      const dashboard = copilotDashboardState(usage);
+      sendEvent("copilot", dashboard);
+      return json(response, 200, dashboard);
+    } catch (error) {
+      return json(response, 400, { error: error.message });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/copilot-token-price" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) {
+      return json(response, 403, { error: "Copilot token-price changes are only available to the local dashboard" });
+    }
+    try {
+      const body = await readJsonRequest(request);
+      const usage = await copilotUsage.setTokenPrice(body.tokenPriceUsdPerMillion);
+      const dashboard = copilotDashboardState(usage);
+      sendEvent("copilot", dashboard);
+      return json(response, 200, dashboard);
+    } catch (error) {
+      return json(response, 400, { error: error.message });
+    }
+  }
   if (requestUrl.pathname === "/monitor/events") {
     response.writeHead(200, {
       "content-type": "text/event-stream",
@@ -845,7 +913,7 @@ async function refreshMetrics() {
 
 async function refreshCopilotUsage() {
   const usage = await copilotUsage.refresh();
-  sendEvent("copilot", usage);
+  sendEvent("copilot", copilotDashboardState(usage));
   return usage;
 }
 

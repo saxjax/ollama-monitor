@@ -1,8 +1,10 @@
 # Security and privacy
 
 Saxjax Monitor is designed for trusted local use. It intentionally captures
-complete prompts, model responses, reasoning fields, client addresses, and
-request metadata passing through its gateway.
+complete prompts, model responses, reasoning fields, tool inputs/results,
+client addresses, and request metadata passing through its Ollama gateway or
+written to new GitHub Copilot CLI, VS Code, or VS Code Insiders session
+transcripts.
 
 ## Safe defaults
 
@@ -23,7 +25,9 @@ gateway can submit inference requests to Ollama.
 Before sharing logs or bug reports, remove prompt text, model responses, client
 addresses, usernames, and local paths.
 
-Use **Clear view** to permanently delete completed traffic from memory and disk.
+Use **Clear view** to permanently delete the monitor's completed traffic from
+memory and disk. It does not delete the source history maintained by Ollama
+clients, GitHub Copilot CLI, VS Code, or VS Code Insiders themselves.
 `./uninstall.sh` preserves history by default; `./uninstall.sh --purge` removes it.
 
 ## Reporting a vulnerability

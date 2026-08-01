@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -28,6 +28,10 @@ function emptyState(status = "unconfigured", detail = "Run configure-copilot.sh 
     usedCredits: null,
     billableCredits: null,
     estimatedCost: null,
+    monthlyBudgetUsd: null,
+    tokenPriceUsdPerMillion: null,
+    budgetUsedPercent: null,
+    budgetRemainingUsd: null,
     models: [],
     updatedAt: null,
     tokenStatusUrl,
@@ -58,6 +62,8 @@ export function normalizeCopilotUsage(config, payload, updatedAt = new Date().to
 
   const time = payload.timePeriod || {};
   const period = [time.year, time.month && String(time.month).padStart(2, "0")].filter(Boolean).join("-") || null;
+  const monthlyBudgetUsd = Number(config.monthlyBudgetUsd) > 0 ? Number(config.monthlyBudgetUsd) : null;
+  const tokenPriceUsdPerMillion = Number(config.tokenPriceUsdPerMillion) > 0 ? Number(config.tokenPriceUsdPerMillion) : null;
   return {
     status: "ready",
     detail: null,
@@ -68,6 +74,10 @@ export function normalizeCopilotUsage(config, payload, updatedAt = new Date().to
     usedCredits,
     billableCredits,
     estimatedCost,
+    monthlyBudgetUsd,
+    tokenPriceUsdPerMillion,
+    budgetUsedPercent: monthlyBudgetUsd ? (estimatedCost / monthlyBudgetUsd) * 100 : null,
+    budgetRemainingUsd: monthlyBudgetUsd ? Math.max(0, monthlyBudgetUsd - estimatedCost) : null,
     models: [...models.values()].sort((a, b) => b.usedCredits - a.usedCredits),
     updatedAt,
     tokenStatusUrl,
@@ -77,6 +87,13 @@ export function normalizeCopilotUsage(config, payload, updatedAt = new Date().to
 
 async function defaultLoadConfig(configPath) {
   return JSON.parse(await readFile(configPath, "utf8"));
+}
+
+async function defaultSaveConfig(configPath, config) {
+  const staging = `${configPath}.${process.pid}.tmp`;
+  await writeFile(staging, `${JSON.stringify(config)}\n`, { encoding: "utf8", mode: 0o600 });
+  await chmod(staging, 0o600);
+  await rename(staging, configPath);
 }
 
 async function defaultReadToken(account) {
@@ -92,6 +109,7 @@ async function defaultReadToken(account) {
 export function createCopilotUsageMonitor({
   configPath,
   loadConfig = defaultLoadConfig,
+  saveConfig = defaultSaveConfig,
   readToken = defaultReadToken,
   fetchImpl = fetch,
   now = () => new Date(),
@@ -123,6 +141,8 @@ export function createCopilotUsageMonitor({
       owner: config.owner,
       user: config.scope === "organization" ? config.user : config.owner,
       tokenUrl: copilotTokenUrl(config),
+      monthlyBudgetUsd: Number(config.monthlyBudgetUsd) > 0 ? Number(config.monthlyBudgetUsd) : null,
+      tokenPriceUsdPerMillion: Number(config.tokenPriceUsdPerMillion) > 0 ? Number(config.tokenPriceUsdPerMillion) : null,
     };
     try {
       const token = await readToken(`${config.scope}:${config.owner}`);
@@ -154,6 +174,8 @@ export function createCopilotUsageMonitor({
         user: config.scope === "organization" ? config.user : config.owner,
         updatedAt: now().toISOString(),
         tokenUrl: copilotTokenUrl(config),
+        monthlyBudgetUsd: Number(config.monthlyBudgetUsd) > 0 ? Number(config.monthlyBudgetUsd) : null,
+        tokenPriceUsdPerMillion: Number(config.tokenPriceUsdPerMillion) > 0 ? Number(config.tokenPriceUsdPerMillion) : null,
       };
     }
     return state;
@@ -164,6 +186,28 @@ export function createCopilotUsageMonitor({
     refresh() {
       if (!pending) pending = performRefresh().finally(() => { pending = null; });
       return pending;
+    },
+    async setBudget(value) {
+      const monthlyBudgetUsd = Number(value);
+      if (!Number.isFinite(monthlyBudgetUsd) || monthlyBudgetUsd < 0 || monthlyBudgetUsd > 1_000_000) {
+        throw new Error("Monthly budget must be between $0 and $1,000,000");
+      }
+      const config = await loadConfig(configPath);
+      if (monthlyBudgetUsd === 0) delete config.monthlyBudgetUsd;
+      else config.monthlyBudgetUsd = Math.round(monthlyBudgetUsd * 100) / 100;
+      await saveConfig(configPath, config);
+      return performRefresh();
+    },
+    async setTokenPrice(value) {
+      const tokenPriceUsdPerMillion = Number(value);
+      if (!Number.isFinite(tokenPriceUsdPerMillion) || tokenPriceUsdPerMillion < 0 || tokenPriceUsdPerMillion > 1_000_000) {
+        throw new Error("Token price must be between $0 and $1,000,000 per million tokens");
+      }
+      const config = await loadConfig(configPath);
+      if (tokenPriceUsdPerMillion === 0) delete config.tokenPriceUsdPerMillion;
+      else config.tokenPriceUsdPerMillion = Math.round(tokenPriceUsdPerMillion * 1_000_000) / 1_000_000;
+      await saveConfig(configPath, config);
+      return performRefresh();
     },
   };
 }

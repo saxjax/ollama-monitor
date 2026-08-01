@@ -13,13 +13,16 @@ const payload = {
 
 test("normalizes AI credit usage across models", () => {
   const result = normalizeCopilotUsage(
-    { scope: "organization", owner: "acme", user: "monalisa" },
+    { scope: "organization", owner: "acme", user: "monalisa", monthlyBudgetUsd: 0.10 },
     payload,
     "2026-08-01T00:00:00.000Z",
   );
   assert.equal(result.usedCredits, 20);
   assert.equal(result.billableCredits, 3);
   assert.equal(result.estimatedCost, 0.03);
+  assert.equal(result.monthlyBudgetUsd, 0.10);
+  assert.equal(Math.round(result.budgetUsedPercent), 30);
+  assert.equal(result.budgetRemainingUsd, 0.07);
   assert.equal(result.period, "2026-08");
   assert.deepEqual(result.models.map(({ model, usedCredits }) => ({ model, usedCredits })), [
     { model: "GPT-5", usedCredits: 15 },
@@ -75,4 +78,34 @@ test("builds a prefilled organization token link", () => {
   assert.equal(url.searchParams.get("target_name"), "acme-corp");
   assert.equal(url.searchParams.get("organization_administration"), "read");
   assert.equal(url.searchParams.get("plan"), null);
+});
+
+test("saves a local monthly budget without replacing billing identity", async () => {
+  let config = { scope: "organization", owner: "acme", user: "managed_user" };
+  const monitor = createCopilotUsageMonitor({
+    configPath: "unused",
+    loadConfig: async () => ({ ...config }),
+    saveConfig: async (_path, value) => { config = value; },
+    readToken: async () => "secret",
+    fetchImpl: async () => ({ ok: true, json: async () => payload }),
+  });
+  const result = await monitor.setBudget(125.50);
+  assert.deepEqual(config, { scope: "organization", owner: "acme", user: "managed_user", monthlyBudgetUsd: 125.5 });
+  assert.equal(result.monthlyBudgetUsd, 125.5);
+});
+
+test("saves a custom local token price without replacing billing identity", async () => {
+  let config = { scope: "organization", owner: "acme", user: "managed_user" };
+  const monitor = createCopilotUsageMonitor({
+    configPath: "unused",
+    loadConfig: async () => ({ ...config }),
+    saveConfig: async (_path, value) => { config = value; },
+    readToken: async () => "secret",
+    fetchImpl: async () => ({ ok: true, json: async () => payload }),
+  });
+  const result = await monitor.setTokenPrice(1.234567);
+  assert.deepEqual(config, {
+    scope: "organization", owner: "acme", user: "managed_user", tokenPriceUsdPerMillion: 1.234567,
+  });
+  assert.equal(result.tokenPriceUsdPerMillion, 1.234567);
 });

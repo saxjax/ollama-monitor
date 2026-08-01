@@ -53,6 +53,7 @@ h1 span { color: var(--amber); font-family: var(--mono); font-size: .62em; margi
 
 main { padding: 0 clamp(22px, 4vw, 64px) 52px; }
 .telemetry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-left: 1px solid var(--line); }
+.telemetry-dials { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .dial, .readout { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); position: relative; overflow: hidden; }
 .dial { min-height: 142px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px; }
 .dial-face { --angle: calc(var(--value) * 3.6deg); width: 76px; aspect-ratio: 1; border-radius: 50%; display: grid; place-content: center; text-align: center; background: radial-gradient(circle at center, var(--ink) 59%, transparent 61%), conic-gradient(var(--cyan) var(--angle), #1d2922 var(--angle)); box-shadow: inset 0 0 0 1px #26382f; transition: --value .5s ease; }
@@ -60,6 +61,9 @@ main { padding: 0 clamp(22px, 4vw, 64px) 52px; }
 .dial-face b { font-family: var(--display); font-size: 21px; font-weight: 400; }
 .dial-face span { color: var(--muted); font-size: 8px; letter-spacing: .18em; }
 .dial > small { color: var(--muted); margin-top: 9px; font-size: 8px; letter-spacing: .12em; }
+.budget-dial .dial-face { background: radial-gradient(circle at center, var(--ink) 59%, transparent 61%), conic-gradient(var(--amber) var(--angle), #1d2922 var(--angle)); }
+.budget-dial.warning .dial-face { box-shadow: inset 0 0 0 1px rgba(255,176,0,.65), 0 0 18px rgba(255,176,0,.12); }
+.budget-dial.danger .dial-face { background: radial-gradient(circle at center, var(--ink) 59%, transparent 61%), conic-gradient(var(--danger) var(--angle), #1d2922 var(--angle)); box-shadow: inset 0 0 0 1px rgba(255,95,87,.7), 0 0 18px rgba(255,95,87,.15); }
 .readout { min-height: 170px; display: flex; flex-direction: column; justify-content: space-between; padding: 24px 26px; background: linear-gradient(135deg, rgba(255,255,255,.018), transparent); }
 .readout strong { font-family: var(--display); font-size: clamp(22px, 2vw, 35px); font-weight: 400; line-height: 1.05; overflow-wrap: anywhere; }
 .readout strong i { color: var(--muted); font: 10px var(--mono); }
@@ -113,6 +117,9 @@ h2 { margin: 0; font-family: var(--display); font-size: 25px; font-weight: 400; 
 .radar::after { inset: 36px; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
 
 .exchange { --session-color: var(--cyan); border-left: 3px solid var(--session-color); border-bottom: 1px solid var(--line); animation: enter .35s ease both; }
+.exchange[data-source="copilot-cli"] { --session-color: var(--amber) !important; }
+.exchange[data-source="vscode"] { --session-color: #70a5ff !important; }
+.exchange[data-source="vscode-insiders"] { --session-color: #b48cff !important; }
 .exchange-head { color: var(--muted); background: rgba(255,255,255,.018); border-bottom: 1px solid rgba(38,51,43,.55); font-size: 9px; }
 .exchange-toggle { width: 100%; display: grid; gap: 7px; padding: 8px 18px 9px; color: inherit; background: transparent; border: 0; font: inherit; text-align: left; cursor: pointer; transition: background .16s ease; }
 .exchange-toggle:hover { background: rgba(255,255,255,.025); }
@@ -171,6 +178,25 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #bdc6be;
 .copilot-usage strong { display: block; margin-top: 7px; font-family: var(--display); font-size: 40px; font-weight: 400; line-height: 1; }
 .copilot-usage > small { color: var(--muted); font-size: 8px; letter-spacing: .1em; }
 .copilot-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
+.copilot-token-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.copilot-token-meta span { padding: 8px; color: var(--muted); border: 1px solid rgba(255,255,255,.06); font-size: 7px; line-height: 1.35; text-transform: uppercase; }
+.copilot-token-meta b { display: block; color: var(--paper); font-size: 10px; font-weight: 500; }
+.copilot-budget-form { margin-top: 14px; padding-top: 12px; border-top: 1px dotted var(--line); }
+.copilot-forecast { margin-top: 12px; padding: 10px; border: 1px solid rgba(255,176,0,.3); background: rgba(255,176,0,.035); }
+.copilot-forecast[hidden] { display: none; }
+.copilot-forecast > strong { display: block; margin: 0 0 7px; color: var(--amber); font: 8px var(--mono); letter-spacing: .12em; }
+.copilot-forecast > div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; color: var(--muted); border-bottom: 1px dotted rgba(255,255,255,.06); font-size: 8px; text-transform: uppercase; }
+.copilot-forecast > div b { color: var(--paper); font-weight: 500; text-align: right; }
+.copilot-forecast > small { display: block; margin-top: 8px; color: var(--muted); font-size: 7px; line-height: 1.45; }
+.copilot-token-meta > strong { grid-column: 1 / -1; margin-top: 5px; color: var(--amber); font: 7px var(--mono); letter-spacing: .08em; }
+.copilot-budget-form > label { color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
+.copilot-budget-form > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; margin-top: 7px; border: 1px solid var(--line); }
+.copilot-budget-form > div > span { padding-left: 8px; color: var(--muted); font-size: 10px; }
+.copilot-budget-form input { min-width: 0; padding: 8px 5px; color: var(--paper); background: transparent; border: 0; font: 10px var(--mono); }
+.copilot-budget-form input:focus { outline: none; }
+.copilot-budget-form button { align-self: stretch; padding: 0 9px; color: var(--cyan); background: rgba(86,242,196,.04); border: 0; border-left: 1px solid var(--line); font: 8px var(--mono); text-transform: uppercase; cursor: pointer; }
+.copilot-budget-form button:disabled { color: var(--muted); cursor: wait; }
+.copilot-budget-form > small { display: block; margin-top: 6px; color: var(--muted); font-size: 7px; line-height: 1.4; }
 .copilot-usage p { min-height: 2.8em; margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
 .copilot-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .copilot-actions[hidden] { display: none; }
@@ -220,7 +246,7 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #bdc6be;
   .masthead { grid-template-columns: 1fr auto; gap: 15px; }
   .clock { display: none; }
   .telemetry { grid-template-columns: repeat(2, 1fr); }
-  .telemetry-dials { grid-template-columns: repeat(3, 1fr); }
+  .telemetry-dials { grid-template-columns: repeat(2, 1fr); }
   .dial { min-height: 112px; padding: 10px 6px; }
   .dial-face { width: 62px; }
   .dial-face b { font-size: 18px; }

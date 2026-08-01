@@ -4,6 +4,7 @@ const exchanges = new Map();
 const modelContexts = new Map();
 const sessions = new Map();
 const contentReader = $("#content-reader");
+const helpDialog = $("#help-dialog");
 const sessionFilter = $("#session-filter");
 const autofollow = $("#autofollow");
 const serverState = $("#server-state");
@@ -733,6 +734,32 @@ contentReader.addEventListener("keydown", (event) => {
     event.preventDefault();
     contentReader.close();
   }
+});
+
+$("#help-open").addEventListener("click", () => {
+  helpDialog.showModal();
+  helpDialog.querySelector("summary")?.focus();
+});
+$("#help-close").addEventListener("click", () => helpDialog.close());
+helpDialog.addEventListener("click", (event) => {
+  if (event.target === helpDialog) helpDialog.close();
+});
+helpDialog.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    helpDialog.close();
+  }
+});
+helpDialog.addEventListener("click", async (event) => {
+  const button = event.target.closest(".copy-help");
+  if (!button) return;
+  try {
+    await navigator.clipboard.writeText(button.dataset.copy || "");
+    button.textContent = "COPIED";
+  } catch {
+    button.textContent = "COPY FAILED";
+  }
+  setTimeout(() => { button.textContent = "COPY"; }, 1400);
 });
 
 $("#clear-view").addEventListener("click", async (event) => {

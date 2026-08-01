@@ -48,6 +48,10 @@ MONITOR_PORT=12435 OLLAMA_POWER_MODE=off ./install.sh
 Open **Saxjax Monitor** from Applications, Spotlight, or the Dock. The native
 bar can be dragged, and **WIDGET** switches to an always-on-top compact window.
 
+Use the clickable **?** in the dashboard header for an interactive setup guide
+with Ollama gateway commands, Copilot CLI/VS Code capture locations, GitHub token
+permissions, direct documentation links, and copy buttons for setup commands.
+
 ### GitHub Copilot credit usage
 
 The dashboard can also show monthly GitHub Copilot AI-credit usage for either

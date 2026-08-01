@@ -50,7 +50,7 @@ function recordTokens(item) {
 }
 
 export function summarizeCopilotTokens(records) {
-  return records.reduce((totals, item) => {
+  return records.filter((item) => item.status === "complete").reduce((totals, item) => {
     const tokens = recordTokens(item);
     totals.inputTokens += tokens.input;
     totals.outputTokens += tokens.output;
@@ -61,7 +61,7 @@ export function summarizeCopilotTokens(records) {
 }
 
 export function forecastCopilotUsage(records, monthlyBudgetUsd, now = new Date(), authoritativeSpendUsd = null, tokenPriceUsdPerMillion = null) {
-  const completed = records.filter((item) => item.status !== "error");
+  const completed = records.filter((item) => item.status === "complete");
   let costUsd = 0;
   let inputTokens = 0;
   let outputTokens = 0;

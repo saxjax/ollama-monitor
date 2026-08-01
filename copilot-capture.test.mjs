@@ -70,6 +70,7 @@ for (const edition of ["vscode", "vscode-insiders"]) {
     const workspaceRoot = path.join(root, "workspaceStorage");
     const chatDir = path.join(workspaceRoot, "workspace-1", "chatSessions");
     const journal = path.join(chatDir, "chat-1.jsonl");
+    const changes = [];
     await mkdir(chatDir, { recursive: true });
     await writeFile(journal, `${JSON.stringify({ kind: 0, v: {
       sessionId: "chat-1",
@@ -82,6 +83,7 @@ for (const edition of ["vscode", "vscode-insiders"]) {
       sessionsRoot: path.join(root, "missing-cli"),
       vscodeRoots: [{ edition, root: workspaceRoot }],
       pollMs: 60_000,
+      onChange: (...args) => changes.push(args),
     });
     const request = {
       requestId: "request-1",
@@ -129,6 +131,13 @@ for (const edition of ["vscode", "vscode-insiders"]) {
     assert.match(item.prompt, /exact rendered user input/);
     assert.equal(item.inputContext.global[0].text, "exact system context");
     assert.equal(item.status, "complete");
+    const persistedBeforeUnrelatedChange = (await readFile(capture.logPath, "utf8")).trim().split("\n").filter(Boolean);
+    const completedEventsBeforeUnrelatedChange = changes.filter(([type]) => type === "complete").length;
+    await appendFile(journal, `${JSON.stringify({ kind: 1, k: ["requests", 0, "message", "text"], v: "complete editor prompt" })}\n`);
+    await capture.poll();
+    const persistedAfterUnrelatedChange = (await readFile(capture.logPath, "utf8")).trim().split("\n").filter(Boolean);
+    assert.equal(persistedAfterUnrelatedChange.length, persistedBeforeUnrelatedChange.length);
+    assert.equal(changes.filter(([type]) => type === "complete").length, completedEventsBeforeUnrelatedChange);
     capture.close();
   });
 }

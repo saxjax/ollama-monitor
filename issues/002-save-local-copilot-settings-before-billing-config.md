@@ -1,7 +1,7 @@
 # Save local Copilot settings before billing configuration exists
 
 - **Severity:** Medium
-- **Status:** Open
+- **Status:** Closed
 - **Found in review:** `HEAD` `57456b2`
 
 ## Problem
@@ -27,3 +27,8 @@ identity, despite the controls being presented.
   the controls are hidden/disabled with a clear explanation.
 - Saving settings must preserve any existing billing identity and token config.
 - Add tests for a missing config file and both settings paths.
+
+## Resolution
+
+The budget and token-price setters now create a local settings object when the
+billing configuration is absent, while preserving existing identity fields.

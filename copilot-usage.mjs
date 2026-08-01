@@ -192,7 +192,12 @@ export function createCopilotUsageMonitor({
       if (!Number.isFinite(monthlyBudgetUsd) || monthlyBudgetUsd < 0 || monthlyBudgetUsd > 1_000_000) {
         throw new Error("Monthly budget must be between $0 and $1,000,000");
       }
-      const config = await loadConfig(configPath);
+      let config;
+      try { config = await loadConfig(configPath); }
+      catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        config = {};
+      }
       if (monthlyBudgetUsd === 0) delete config.monthlyBudgetUsd;
       else config.monthlyBudgetUsd = Math.round(monthlyBudgetUsd * 100) / 100;
       await saveConfig(configPath, config);
@@ -203,7 +208,12 @@ export function createCopilotUsageMonitor({
       if (!Number.isFinite(tokenPriceUsdPerMillion) || tokenPriceUsdPerMillion < 0 || tokenPriceUsdPerMillion > 1_000_000) {
         throw new Error("Token price must be between $0 and $1,000,000 per million tokens");
       }
-      const config = await loadConfig(configPath);
+      let config;
+      try { config = await loadConfig(configPath); }
+      catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        config = {};
+      }
       if (tokenPriceUsdPerMillion === 0) delete config.tokenPriceUsdPerMillion;
       else config.tokenPriceUsdPerMillion = Math.round(tokenPriceUsdPerMillion * 1_000_000) / 1_000_000;
       await saveConfig(configPath, config);

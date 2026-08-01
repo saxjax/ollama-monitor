@@ -109,3 +109,18 @@ test("saves a custom local token price without replacing billing identity", asyn
   });
   assert.equal(result.tokenPriceUsdPerMillion, 1.234567);
 });
+
+test("saves local settings when billing configuration does not exist yet", async () => {
+  let config;
+  const missingConfig = () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); };
+  const monitor = createCopilotUsageMonitor({
+    configPath: "unused",
+    loadConfig: async () => { if (!config) missingConfig(); return { ...config }; },
+    saveConfig: async (_path, value) => { config = value; },
+  });
+  const budgetState = await monitor.setBudget(25);
+  assert.deepEqual(config, { monthlyBudgetUsd: 25 });
+  assert.equal(budgetState.status, "error");
+  await monitor.setTokenPrice(2);
+  assert.deepEqual(config, { monthlyBudgetUsd: 25, tokenPriceUsdPerMillion: 2 });
+});

@@ -52,6 +52,7 @@ test("uses a custom uniform token price for local Copilot estimates", () => {
 
 test("dashboard token totals estimate a captured prompt when the client reports no token metrics", () => {
   const totals = summarizeCopilotTokens([{
+    status: "complete",
     prompt: "Explain why this request must count toward paid Copilot input usage.",
     response: "Because the content was sent to Copilot.",
     metrics: { promptTokens: null, outputTokens: null },
@@ -59,4 +60,17 @@ test("dashboard token totals estimate a captured prompt when the client reports 
   assert.equal(totals.inputTokens > 0, true);
   assert.equal(totals.outputTokens > 0, true);
   assert.equal(totals.estimatedInputRecords, 1);
+});
+
+test("excludes active Copilot requests from paid aggregates", () => {
+  const forecast = forecastCopilotUsage([{
+    status: "streaming",
+    model: "GPT-5 mini",
+    startedAt: "2026-08-09T12:00:00Z",
+    prompt: "A large unfinished request that must not be billed twice",
+    metrics: { promptTokens: 1_000_000, outputTokens: 100_000 },
+  }], 10, new Date("2026-08-10T12:00:00Z"));
+  assert.equal(forecast.requestCount, 0);
+  assert.equal(forecast.costUsd, 0);
+  assert.equal(forecast.creditsPerDay, 0);
 });

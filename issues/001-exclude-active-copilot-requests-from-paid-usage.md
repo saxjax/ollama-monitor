@@ -1,7 +1,7 @@
 # Exclude active Copilot requests from paid usage aggregates
 
 - **Severity:** High
-- **Status:** Open
+- **Status:** Closed
 - **Found in review:** `HEAD` `57456b2`
 
 ## Problem
@@ -29,3 +29,9 @@ finishes. Repeated updates can make velocity and runway appear unstable.
   if desired.
 - Add regression coverage proving a streaming record does not change billed
   cost, credits/day, projection, runway, or paid token totals.
+
+## Resolution
+
+Forecasts and aggregate Copilot token totals now include completed records only;
+active requests remain visible in the communication wire but do not affect paid
+usage aggregates.

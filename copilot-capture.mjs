@@ -148,6 +148,18 @@ function normalizeStored(item) {
   return normalizeCaptureRecord({ source: "copilot-cli", ...item });
 }
 
+function vscodeCompletionSignature(item) {
+  return JSON.stringify({
+    status: item.status,
+    prompt: item.prompt,
+    response: item.response,
+    thinking: item.thinking,
+    tools: item.tools,
+    metrics: item.metrics,
+    finishedAt: item.finishedAt,
+  });
+}
+
 export async function loadCopilotCaptureHistory(logPath, maxHistory = DEFAULT_MAX_HISTORY) {
   try {
     const lines = (await readFile(logPath, "utf8")).trim().split("\n").filter(Boolean);
@@ -275,6 +287,8 @@ export async function createCopilotCapture({
 
   function acceptVsCodeItem(item) {
     const previous = vscodeTracked.get(item.id);
+    if (previous?.status === "complete" && item.status === "complete" &&
+        vscodeCompletionSignature(previous) === vscodeCompletionSignature(item)) return;
     vscodeTracked.set(item.id, item);
     if (!previous) {
       if (item.status === "complete") {

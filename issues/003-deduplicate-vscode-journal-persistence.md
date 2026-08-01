@@ -1,7 +1,7 @@
 # Avoid re-persisting completed VS Code journal entries
 
 - **Severity:** Low
-- **Status:** Open
+- **Status:** Closed
 - **Found in review:** `HEAD` `57456b2`
 
 ## Problem
@@ -28,3 +28,8 @@ duplicate records and downstream listeners can receive repeated finish events.
 - Existing history loading still deduplicates by ID.
 - Add a journal-update regression test proving unrelated new entries do not
   duplicate prior completed records.
+
+## Resolution
+
+Completed VS Code records are now compared using a stable completion signature;
+unchanged journal replays are neither persisted nor emitted again.

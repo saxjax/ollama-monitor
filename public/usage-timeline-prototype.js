@@ -14,6 +14,7 @@
   let focusDay = 0;
   let focusSlot = null;
   let selectedSessionId = null;
+  let restoreGraphFocus = false;
   let unit = ['tokens', 'credits', 'dollars'].includes(params.get('unit')) ? params.get('unit') : 'credits';
   let zoom = params.get('zoom') === 'day' ? 'day' : 'month';
   let compare = false;
@@ -208,6 +209,47 @@
       ? `SELECTED ${dates[focusDay]}${focusSlot == null ? '' : ` · ${slotLabel(measure().slots[focusSlot])}`} · 30-MINUTE DETAIL`
       : `SELECTED ${dates[focusDay]} · DAILY OVERVIEW`;
   };
+  const applyGraphSummary = (selector, label, peakLabel, peakValue) => {
+    const reading = host.querySelector(selector);
+    if (!reading) return;
+    reading.classList.add('proto-graph-summary');
+    const title = document.createElement('span');
+    title.textContent = label;
+    const metrics = document.createElement('div');
+    metrics.className = 'proto-graph-metrics';
+    for (const [name, value] of [['TOTAL MONTH', monthAmount(months[monthIndex])], [peakLabel, number(peakValue)]]) {
+      const metric = document.createElement('div');
+      metric.className = 'proto-graph-metric';
+      const metricName = document.createElement('small');
+      metricName.textContent = name;
+      const metricValue = document.createElement('b');
+      metricValue.textContent = value;
+      metric.append(metricName, metricValue);
+      metrics.append(metric);
+    }
+    reading.replaceChildren(title, metrics);
+  };
+  const moveSelectedBin = (key) => {
+    const slots = measure().slots;
+    if (!slots.length) return false;
+    let current = focusSlot == null ? slots.findIndex((slot) => slot.day === focusDay && slot.total > 0) : focusSlot;
+    if (current < 0) current = Math.max(0, focusDay * 48);
+    let next = current;
+    if (key === 'ArrowLeft') next -= 1;
+    if (key === 'ArrowRight') next += 1;
+    if (key === 'ArrowUp') next -= 48;
+    if (key === 'ArrowDown') next += 48;
+    if (key === 'Home') next = slots[current].day * 48;
+    if (key === 'End') next = (slots[current].day * 48) + 47;
+    next = Math.max(0, Math.min(slots.length - 1, next));
+    if (next === current && focusSlot != null) return false;
+    focusSlot = next;
+    focusDay = slots[next].day;
+    selectedSessionId = null;
+    restoreGraphFocus = true;
+    render();
+    return true;
+  };
   function render() {
     const index = variants.indexOf(variant);
     const names = { A: 'Spike lens', B: 'Month pulse' };
@@ -233,8 +275,6 @@
       }
     }
     {
-      const title = host.querySelector('.proto-spike-chart .proto-reading span');
-      if (title) title.textContent = `${months[monthIndex].label} · HIGHEST-USAGE DAY`;
       host.querySelectorAll('.proto-spike-chart .proto-bar small').forEach((label, day) => { label.textContent = String(day + 1); });
       const chart = host.querySelector('.proto-spike-chart');
       if (chart) {
@@ -255,7 +295,29 @@
         });
       }
     }
+    const graphData = measure();
+    applyGraphSummary('.proto-spike-chart .proto-reading', `${months[monthIndex].label} · DAILY BARS`, 'HIGHEST DAY', Math.max(...graphData.daily));
+    applyGraphSummary('.proto-activity .proto-reading', `${months[monthIndex].label} · 30-MINUTE STACKS`, 'HIGHEST 30 MIN', Math.max(...graphData.slots.map((slot) => slot.total)));
     syncGraphFrame();
+    const activitySvg = host.querySelector('.proto-activity svg');
+    if (activitySvg) {
+      activitySvg.setAttribute('tabindex', '0');
+      activitySvg.setAttribute('aria-label', '30-minute usage bins. Use arrow keys to select nearby bins.');
+      const visibleSlots = zoom === 'day' ? graphData.slots.filter((slot) => slot.day === focusDay) : graphData.slots;
+      const selectedIndex = visibleSlots.findIndex((slot) => slot.id === focusSlot);
+      const selectedHit = activitySvg.querySelector('.proto-slot-hit.is-selected');
+      if (selectedHit && selectedIndex >= 0) {
+        const selected = visibleSlots[selectedIndex];
+        const peak = compare ? sharedSlotPeak() : Math.max(1, ...visibleSlots.map((slot) => slot.total));
+        const height = Math.max(3, (selected.total / peak) * 116);
+        selectedHit.setAttribute('y', String(150 - height));
+        selectedHit.setAttribute('height', String(height));
+      }
+      activitySvg.addEventListener('keydown', (event) => {
+        if (variant !== 'B' || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+        if (moveSelectedBin(event.key)) event.preventDefault();
+      });
+    }
     host.querySelectorAll('[data-unit]').forEach((button) => button.addEventListener('click', () => { unit = button.dataset.unit; params.set('unit', unit); focusSlot = null; history.replaceState(null, '', `${location.pathname}?${params}`); render(); }));
     host.querySelectorAll('[data-month-index]').forEach((button) => button.addEventListener('click', () => { chooseMonth(Number(button.dataset.monthIndex)); render(); }));
     host.querySelectorAll('[data-month-step]').forEach((button) => button.addEventListener('click', () => { chooseMonth(monthIndex + Number(button.dataset.monthStep)); render(); }));
@@ -268,7 +330,7 @@
       render();
     }));
     host.querySelectorAll('[data-day]').forEach((element) => element.addEventListener('click', () => { focusDay = Number(element.dataset.day); focusSlot = null; selectedSessionId = null; render(); }));
-    host.querySelectorAll('[data-slot]').forEach((element) => element.addEventListener('click', () => { focusSlot = Number(element.dataset.slot); focusDay = measure().slots[focusSlot].day; selectedSessionId = null; render(); }));
+    host.querySelectorAll('[data-slot]').forEach((element) => element.addEventListener('click', () => { focusSlot = Number(element.dataset.slot); focusDay = measure().slots[focusSlot].day; selectedSessionId = null; restoreGraphFocus = true; render(); }));
     host.querySelectorAll('[data-zoom]').forEach((button) => button.addEventListener('click', () => { zoom = button.dataset.zoom; params.set('zoom', zoom); selectedSessionId = null; history.replaceState(null, '', `${location.pathname}?${params}`); render(); }));
     host.querySelectorAll('[data-session]').forEach((element) => element.addEventListener('click', () => { selectedSessionId = Number(element.dataset.session); render(); }));
     host.querySelectorAll('[data-copy-source]').forEach((button) => button.addEventListener('click', () => {
@@ -288,6 +350,10 @@
       button.textContent = variant === 'A' ? 'OPEN B · INSPECT THIS MONTH’S TIME SLOTS →' : '← RETURN TO A · SPIKE LENS';
       syncGraphFrame();
     }));
+    if (restoreGraphFocus) {
+      restoreGraphFocus = false;
+      requestAnimationFrame(() => host.querySelector('.proto-activity svg')?.focus());
+    }
   }
   render();
 })();

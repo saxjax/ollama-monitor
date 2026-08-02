@@ -3,6 +3,7 @@
 *.app/
 build/
 data/
+public/usage-timeline-prototype-fixture.js
 
 # Prompt and response history must never be committed.
 traffic.jsonl

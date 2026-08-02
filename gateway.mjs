@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createCopilotUsageMonitor } from "./copilot-usage.mjs";
 import { createCopilotCapture } from "./copilot-capture.mjs";
+import { createUsageTimelineStore } from "./usage-timeline-store.mjs";
+import { createVsCodeInsidersImporter } from "./vscode-insiders-importer.mjs";
 import { captureCounters, captureSnapshot, combineCaptureState, finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
 import { forecastCopilotUsage, summarizeCopilotTokens } from "./copilot-forecast.mjs";
 
@@ -56,6 +58,8 @@ const requests = new Map();
 const history = await loadHistory();
 const copilotUsage = createCopilotUsageMonitor({ configPath: copilotConfig });
 let copilotCapture;
+let usageTimelineStore;
+let usageTimelineImporter;
 const counters = {
   total: history.length,
   errors: history.filter((item) => item.status === "error").length,
@@ -113,6 +117,7 @@ function initialState() {
     ...traffic,
     counters: { ...counters },
     copilot: copilotDashboardState(copilotUsage.snapshot()),
+    usageTimeline: usageTimelineStore?.snapshot() || null,
   };
 }
 
@@ -163,6 +168,12 @@ function historyState(reason) {
 async function clearHistory() {
   history.splice(0);
   await copilotCapture?.clear();
+  // Timeline Clear is deliberately narrower than Reset: it removes local
+  // recognition text but retains numeric recovered history and source anchors.
+  if (usageTimelineStore) {
+    const timeline = await usageTimelineStore.clearPromptExcerpts();
+    sendEvent("usage-timeline", timeline);
+  }
   await queueTrafficFileOperation(() => unlink(trafficLog).catch((error) => {
     if (error.code !== "ENOENT") throw error;
   }));
@@ -180,6 +191,16 @@ copilotCapture = await createCopilotCapture({
     else sendEvent("request-finished", requestSnapshot(item));
     sendEvent("copilot", copilotDashboardState(copilotUsage.snapshot()));
   },
+});
+usageTimelineStore = await createUsageTimelineStore({ dataDir });
+usageTimelineImporter = createVsCodeInsidersImporter({
+  store: usageTimelineStore,
+  onChange({ snapshot }) { sendEvent("usage-timeline", snapshot); },
+});
+// Historical journal recovery can be substantial. The dashboard must become
+// available while it runs; completed imports update it through the event stream.
+void usageTimelineImporter.start().catch((error) => {
+  console.error(`Usage timeline import unavailable: ${error.message}`);
 });
 refreshCounters();
 
@@ -825,8 +846,60 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/monitor/app.js") {
     return serveAsset(response, "app.js", "text/javascript; charset=utf-8");
   }
+  if (requestUrl.pathname === "/monitor/usage-timeline-prototype.js") {
+    return serveAsset(response, "usage-timeline-prototype.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline.js") {
+    return serveAsset(response, "usage-timeline.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline-view-model.mjs") {
+    return serveAsset(response, "../usage-timeline-view-model.mjs", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline-prototype-fixture.js") {
+    return serveAsset(response, "usage-timeline-prototype-fixture.js", "text/javascript; charset=utf-8");
+  }
   if (requestUrl.pathname === "/monitor/api/state") {
     return json(response, 200, initialState());
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline" && request.method === "GET") {
+    return json(response, 200, usageTimelineStore.snapshot());
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline/profile" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) {
+      return json(response, 403, { error: "Timeline changes are only available to the local dashboard" });
+    }
+    try {
+      const body = await readJsonRequest(request);
+      const timeline = await usageTimelineStore.renameUnverifiedProfile(body.label);
+      sendEvent("usage-timeline", timeline);
+      return json(response, 200, timeline);
+    } catch (error) {
+      return json(response, 400, { error: `Could not rename local profile: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline/prompt-excerpts" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {
+      return json(response, 403, { error: "Timeline changes are only available to the local dashboard" });
+    }
+    try {
+      const timeline = await usageTimelineStore.clearPromptExcerpts();
+      sendEvent("usage-timeline", timeline);
+      return json(response, 200, timeline);
+    } catch (error) {
+      return json(response, 500, { error: `Could not clear timeline prompt excerpts: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {
+      return json(response, 403, { error: "Timeline changes are only available to the local dashboard" });
+    }
+    try {
+      const timeline = await usageTimelineStore.resetUsageHistory();
+      sendEvent("usage-timeline", timeline);
+      return json(response, 200, timeline);
+    } catch (error) {
+      return json(response, 500, { error: `Could not reset usage timeline history: ${error.message}` });
+    }
   }
   if (requestUrl.pathname === "/monitor/api/history" && request.method === "DELETE") {
     if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {

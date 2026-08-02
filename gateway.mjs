@@ -12,6 +12,7 @@ import { promisify } from "node:util";
 import { createCopilotUsageMonitor } from "./copilot-usage.mjs";
 import { createCopilotCapture } from "./copilot-capture.mjs";
 import { createUsageTimelineStore } from "./usage-timeline-store.mjs";
+import { createPrototypeFeedbackStore } from "./prototype-feedback-store.mjs";
 import { createVsCodeInsidersImporter } from "./vscode-insiders-importer.mjs";
 import { captureCounters, captureSnapshot, combineCaptureState, finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
 import { forecastCopilotUsage, summarizeCopilotTokens } from "./copilot-forecast.mjs";
@@ -60,6 +61,7 @@ const copilotUsage = createCopilotUsageMonitor({ configPath: copilotConfig });
 let copilotCapture;
 let usageTimelineStore;
 let usageTimelineImporter;
+let prototypeFeedbackStore;
 const counters = {
   total: history.length,
   errors: history.filter((item) => item.status === "error").length,
@@ -193,6 +195,7 @@ copilotCapture = await createCopilotCapture({
   },
 });
 usageTimelineStore = await createUsageTimelineStore({ dataDir });
+prototypeFeedbackStore = await createPrototypeFeedbackStore({ dataDir });
 usageTimelineImporter = createVsCodeInsidersImporter({
   store: usageTimelineStore,
   onChange({ snapshot }) { sendEvent("usage-timeline", snapshot); },
@@ -843,8 +846,20 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/monitor/styles.css") {
     return serveAsset(response, "styles.css", "text/css; charset=utf-8");
   }
+  if (requestUrl.pathname === "/monitor/monitor-ux-prototypes.css") {
+    return serveAsset(response, "monitor-ux-prototypes.css", "text/css; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/prototype-feedback-lab.css") {
+    return serveAsset(response, "prototype-feedback-lab.css", "text/css; charset=utf-8");
+  }
   if (requestUrl.pathname === "/monitor/app.js") {
     return serveAsset(response, "app.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/monitor-ux-prototypes.js") {
+    return serveAsset(response, "monitor-ux-prototypes.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/prototype-feedback-lab.js") {
+    return serveAsset(response, "prototype-feedback-lab.js", "text/javascript; charset=utf-8");
   }
   if (requestUrl.pathname === "/monitor/usage-timeline-prototype.js") {
     return serveAsset(response, "usage-timeline-prototype.js", "text/javascript; charset=utf-8");
@@ -863,6 +878,72 @@ const server = http.createServer(async (request, response) => {
   }
   if (requestUrl.pathname === "/monitor/api/usage-timeline" && request.method === "GET") {
     return json(response, 200, usageTimelineStore.snapshot());
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback" && request.method === "GET") {
+    return json(response, 200, prototypeFeedbackStore.snapshot());
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/export" && request.method === "GET") {
+    return json(response, 200, prototypeFeedbackStore.exportBundle());
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/profile" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.setReviewer(await readJsonRequest(request));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save reviewer: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/comment" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const result = await prototypeFeedbackStore.addComment(await readJsonRequest(request, 16_384));
+      sendEvent("prototype-feedback", result.snapshot);
+      return json(response, 200, result);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save comment: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/comment" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.deleteComment(requestUrl.searchParams.get("id"));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not delete comment: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/activity" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const body = await readJsonRequest(request, 131_072);
+      const snapshot = await prototypeFeedbackStore.recordActivity(Array.isArray(body.entries) ? body.entries : []);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save prototype activity: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/import" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.importBundle(await readJsonRequest(request, 8_000_000));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not import review bundle: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.reset();
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 500, { error: `Could not reset prototype feedback: ${error.message}` });
+    }
   }
   if (requestUrl.pathname === "/monitor/api/usage-timeline/profile" && request.method === "POST") {
     if (!isLocalControlRequest(request)) {

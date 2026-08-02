@@ -180,6 +180,38 @@ OLLAMA_HOST=http://127.0.0.1:11435 your-client-command
 Open the dashboard directly at
 `http://127.0.0.1:11435/monitor/`.
 
+### Prototype review lab
+
+Open **View → Open Prototype Lab** in the native app, use the **Prototype lab**
+link in the dashboard, or open:
+
+```text
+http://127.0.0.1:11435/monitor/?prototype=monitor&variant=A
+```
+
+All five monitor directions use the same local usage and system data and expose
+the same filters, units, time navigation, evidence, session lanes, and Ollama
+power control. The floating review tools add three workflows:
+
+- **Comment** marks commentable sections and controls. Click one to attach a
+  keep/problem/idea/question note to its prototype and current investigation
+  context.
+- **Compare** places comments beside aggregate visits, active-use time, and
+  feature-action counts for every prototype. These counts indicate attention
+  and attempts, not approval.
+- **Export** creates a portable JSON review bundle. Colleagues can send their
+  bundles back; import all of them on one Mac to merge the evidence without
+  double-counting repeated imports.
+
+The bundle deliberately excludes captured prompt/response bodies and the usage
+timeline. It includes reviewer-written comments, selected section/item IDs,
+aggregate prototype activity, and an AI analysis brief. Attach the exported
+bundle to an AI coding session with this repository to synthesize and implement
+the next set of variants while retaining the review loop.
+
+Prototype feedback is stored locally in
+`~/Library/Application Support/Saxjax Monitor/prototype-feedback-v1.json`.
+
 The vertical header lever starts or stops a local Ollama installation. It uses
 Ollama.app when available and falls back to `ollama serve`. Up/green is on,
 down/red is off, and amber means the state is changing.

@@ -6,6 +6,8 @@
     <meta name="color-scheme" content="dark" />
     <title>Saxjax Monitor — Inference Telemetry</title>
     <link rel="stylesheet" href="/monitor/styles.css" />
+    <link rel="stylesheet" href="/monitor/monitor-ux-prototypes.css" />
+    <link rel="stylesheet" href="/monitor/prototype-feedback-lab.css" />
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -23,6 +25,7 @@
         <span><b id="server-label">Connecting</b><small id="server-version">OLLAMA · POWER</small></span>
       </button>
       <div class="clock"><strong id="clock">--:--:--</strong><small id="clock-zone">LOCAL TIME</small></div>
+      <a class="prototype-lab-link" href="/monitor/?prototype=monitor&amp;variant=A" title="Open the five interactive monitor prototypes and review tools">Prototype lab</a>
       <button class="help-button" id="help-open" type="button" aria-label="Open setup and help guide" title="Setup and help">?</button>
     </header>
 
@@ -279,5 +282,6 @@
     </dialog>
     <script src="/monitor/app.js" defer></script>
     <script type="module" src="/monitor/usage-timeline.js"></script>
+    <script type="module" src="/monitor/monitor-ux-prototypes.js"></script>
   </body>
 </html>

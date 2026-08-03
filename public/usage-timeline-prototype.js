@@ -17,6 +17,7 @@
   let restoreGraphFocus = false;
   let unit = ['tokens', 'credits', 'dollars'].includes(params.get('unit')) ? params.get('unit') : 'credits';
   let zoom = params.get('zoom') === 'day' ? 'day' : 'month';
+  let sortDirection = globalThis.SaxjaxDateTimeSort.normalize(params.get('sort'));
   let compare = false;
 
   const months = fixture?.months?.length ? fixture.months : [];
@@ -122,6 +123,7 @@
   }, '');
   const selector = () => `<div class="proto-units" aria-label="Display unit">${['tokens', 'credits', 'dollars'].map((key) => { const unavailable = key === 'dollars' && !fixture?.moneyAvailable; return `<button data-unit="${key}" class="${key === unit ? 'is-current' : ''}" ${unavailable ? 'disabled title="No explicit price rule is available"' : ''}>${key === 'credits' ? 'Provider unit' : key[0].toUpperCase() + key.slice(1)}${unavailable ? ' · unavailable' : ''}</button>`; }).join('')}</div>`;
   const zoomSelector = () => `<div class="proto-units proto-zoom" aria-label="Timeline zoom"><button data-zoom="month" class="${zoom === 'month' ? 'is-current' : ''}">Full month</button><button data-zoom="day" class="${zoom === 'day' ? 'is-current' : ''}">Selected day</button></div>`;
+  const sortSelector = () => `<div class="proto-units proto-sort" aria-label="Request date and time order"><button data-sort="desc" class="${sortDirection === 'desc' ? 'is-current' : ''}">Newest first ↓</button><button data-sort="asc" class="${sortDirection === 'asc' ? 'is-current' : ''}">Oldest first ↑</button></div>`;
   const legend = () => `<div class="proto-origin-legend">${origins.map(([key, label]) => `<i style="background:${colors[key]}"></i>${label}`).join(' ')}</div>`;
   const monthRail = () => {
     const selected = months[monthIndex];
@@ -182,9 +184,9 @@
   const focusLanes = () => {
     const data = measure();
     const activeSlot = focusSlot == null ? null : data.slots[focusSlot];
-    const selected = sessions.filter((session) => session.day === focusDay && (!activeSlot || Math.max(0, Math.min(47, Math.floor(session.start / 30))) === activeSlot.bucket)).sort((left, right) => left.start - right.start);
+    const selected = sessions.filter((session) => session.day === focusDay && (!activeSlot || Math.max(0, Math.min(47, Math.floor(session.start / 30))) === activeSlot.bucket)).sort((left, right) => globalThis.SaxjaxDateTimeSort.compareValues((left.day * 1440) + left.start, (right.day * 1440) + right.start, sortDirection));
     const originName = Object.fromEntries(origins);
-    return `<section class="proto-focus"><div class="proto-workload-head"><div><span>${activeSlot ? `SELECTED SLOT · ${dates[focusDay]} · ${slotLabel(activeSlot)}` : `SELECTED DAY · ${dates[focusDay]} · 00:00–24:00`}</span><h3>Prompt in → response out</h3><p>${selected.length} requests, sorted by prompt start time. Click any row to reveal its excerpt and copy its local VS Code chat reference.</p></div>${legend()}</div>${selected.map((session) => { const left = Math.max(0, session.start); const width = Math.min(1440, session.end) - left; return `<button data-session="${session.id}" class="proto-focus-row ${session.id === selectedSessionId ? 'is-selected' : ''}"><span><b>IN ${clock(session.start)}</b> → OUT ${clock(session.end)} · ${originName[session.origin]} · ${number(value(session))}</span><div class="proto-focus-track"><i style="--left:${(left / 1440) * 100}%;--width:${Math.max(3, (width / 1440) * 100)}%;--origin:${colors[session.origin]}"></i></div></button>`; }).join('') || '<p class="proto-note">No recorded prompt started in this selected time slot.</p>'}</section>`;
+    return `<section class="proto-focus"><div class="proto-workload-head"><div><span>${activeSlot ? `SELECTED SLOT · ${dates[focusDay]} · ${slotLabel(activeSlot)}` : `SELECTED DAY · ${dates[focusDay]} · 00:00–24:00`}</span><h3>Prompt in → response out</h3><p>${selected.length} requests · ${globalThis.SaxjaxDateTimeSort.label(sortDirection)} by prompt start. Click any row to reveal its excerpt and copy its local VS Code chat reference.</p></div><div>${legend()}${sortSelector()}</div></div>${selected.map((session) => { const left = Math.max(0, session.start); const width = Math.min(1440, session.end) - left; return `<button data-session="${session.id}" class="proto-focus-row ${session.id === selectedSessionId ? 'is-selected' : ''}"><span><b>IN ${clock(session.start)}</b> → OUT ${clock(session.end)} · ${originName[session.origin]} · ${number(value(session))}</span><div class="proto-focus-track"><i style="--left:${(left / 1440) * 100}%;--width:${Math.max(3, (width / 1440) * 100)}%;--origin:${colors[session.origin]}"></i></div></button>`; }).join('') || '<p class="proto-note">No recorded prompt started in this selected time slot.</p>'}</section>`;
   };
   const originChart = () => {
     const data = measure();
@@ -332,6 +334,7 @@
     host.querySelectorAll('[data-day]').forEach((element) => element.addEventListener('click', () => { focusDay = Number(element.dataset.day); focusSlot = null; selectedSessionId = null; render(); }));
     host.querySelectorAll('[data-slot]').forEach((element) => element.addEventListener('click', () => { focusSlot = Number(element.dataset.slot); focusDay = measure().slots[focusSlot].day; selectedSessionId = null; restoreGraphFocus = true; render(); }));
     host.querySelectorAll('[data-zoom]').forEach((button) => button.addEventListener('click', () => { zoom = button.dataset.zoom; params.set('zoom', zoom); selectedSessionId = null; history.replaceState(null, '', `${location.pathname}?${params}`); render(); }));
+    host.querySelectorAll('[data-sort]').forEach((button) => button.addEventListener('click', () => { sortDirection = globalThis.SaxjaxDateTimeSort.normalize(button.dataset.sort); if (sortDirection === 'asc') params.set('sort', 'asc'); else params.delete('sort'); history.replaceState(null, '', `${location.pathname}?${params}`); render(); window.dispatchEvent(new CustomEvent('saxjax-date-sort-change', { detail: { direction: sortDirection } })); }));
     host.querySelectorAll('[data-session]').forEach((element) => element.addEventListener('click', () => { selectedSessionId = Number(element.dataset.session); render(); }));
     host.querySelectorAll('[data-copy-source]').forEach((button) => button.addEventListener('click', () => {
       const source = sessions.find((item) => item.id === Number(button.dataset.copySource))?.sourceRef;
@@ -355,5 +358,13 @@
       requestAnimationFrame(() => host.querySelector('.proto-activity svg')?.focus());
     }
   }
+  window.addEventListener('saxjax-date-sort-change', (event) => {
+    const direction = globalThis.SaxjaxDateTimeSort.normalize(event.detail?.direction);
+    if (direction === sortDirection) return;
+    sortDirection = direction;
+    if (sortDirection === 'asc') params.set('sort', 'asc'); else params.delete('sort');
+    history.replaceState(null, '', `${location.pathname}?${params}`);
+    render();
+  });
   render();
 })();

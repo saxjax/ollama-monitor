@@ -54,6 +54,7 @@ h1 span { color: var(--amber); font-family: var(--mono); font-size: .62em; margi
 .help-button:hover, .help-button:focus-visible { color: var(--paper); border-color: var(--cyan); box-shadow: 0 0 14px rgba(86,242,196,.14); outline: none; }
 .prototype-lab-link { padding: 8px 10px; color: var(--amber); border: 1px solid rgba(255,176,0,.38); font-size: 8px; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; white-space: nowrap; }
 .prototype-lab-link:hover, .prototype-lab-link:focus-visible { color: var(--paper); border-color: var(--amber); outline: none; }
+.saxjax-native-app .prototype-lab-link { display: none; }
 
 main { padding: 0 clamp(22px, 4vw, 64px) 52px; }
 .telemetry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-left: 1px solid var(--line); }

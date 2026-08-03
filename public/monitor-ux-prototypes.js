@@ -4,6 +4,7 @@
 
 const params = new URLSearchParams(location.search);
 const prototypeEnabled = params.get("prototype") === "monitor";
+const labEnabled = prototypeEnabled && params.get("surface") !== "default";
 
 const VARIANTS = {
   A: "Flight recorder",
@@ -117,6 +118,7 @@ function normalizeEvents(snapshot) {
     return [{
       id: event.id || `event-${index}`,
       at: instant,
+      startedAt: event.timing?.startedAt || instant,
       month: point.month,
       day: point.day,
       minute: started.minute,
@@ -169,6 +171,24 @@ function formatValue(value, unit, compact = false) {
 function clock(minute) {
   const safe = ((minute % 1440) + 1440) % 1440;
   return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function sortLabel(direction) {
+  return globalThis.SaxjaxDateTimeSort.label(direction);
+}
+
+function sortSlotsByDateTime(slots, direction) {
+  return [...slots].sort((left, right) => globalThis.SaxjaxDateTimeSort.compareValues(
+    Date.parse(`${left.day}T${clock(left.bucket * 30)}:00`),
+    Date.parse(`${right.day}T${clock(right.bucket * 30)}:00`),
+    direction,
+  ));
+}
+
+function sortedDays(model) {
+  return [...model.view.daily].sort((left, right) =>
+    globalThis.SaxjaxDateTimeSort.compareDateTimes(left.day, right.day, model.sortDirection),
+  );
 }
 
 function median(values) {
@@ -290,8 +310,15 @@ function selectOptions(values, current, labels = {}) {
 }
 
 function controlDeck(model) {
-  return `<section class="mux-controls" aria-label="Timeline controls">
-    <div class="mux-filters">
+  const activeFilters = [model.filters.provider, model.filters.origin, model.filters.model].filter((value) => value !== "all").length + (model.filters.search ? 1 : 0);
+  const compactSummary = [
+    `${model.filteredEvents.length.toLocaleString()} events`,
+    activeFilters ? `${activeFilters} filter${activeFilters === 1 ? "" : "s"}` : "all sources",
+    model.referenceMonth ? `vs ${formatMonth(model.referenceMonth, true)}` : `${model.zoom} view`,
+  ].join(" · ");
+  return `<section class="mux-controls ${model.controlsOpen ? "is-open" : ""}" aria-label="Timeline controls">
+    <button class="mux-control-disclosure" data-action="controls-toggle" aria-expanded="${model.controlsOpen}"><span>Investigation controls</span><strong>${escapeHtml(compactSummary)}</strong><b>${model.controlsOpen ? "Close ↑" : "Open ↓"}</b></button>
+    <div class="mux-control-body"><div class="mux-filters">
       <label>Provider<select data-action="filter" data-filter="provider">${selectOptions(model.options.providers, model.filters.provider, model.options.providerLabels)}</select></label>
       <label>Source<select data-action="filter" data-filter="origin">${selectOptions(model.options.origins, model.filters.origin, ORIGIN_LABELS)}</select></label>
       <label>Model<select data-action="filter" data-filter="model">${selectOptions(model.options.models, model.filters.model)}</select></label>
@@ -301,9 +328,10 @@ function controlDeck(model) {
       <div><span>Reference month</span>${model.months.filter((item) => item !== model.month).map((item) => `<button data-action="reference" data-month="${item}" class="${model.referenceMonth === item ? "is-active" : ""}">${formatMonth(item, true)}</button>`).join("")}</div>
       <div><span>Rank spikes by</span>${[["value", "Total"], ["jump", "% jump"], ["unusual", "Unusual for time"]].map(([key, label]) => `<button data-action="anomaly" data-mode="${key}" class="${model.anomalyMode === key ? "is-active" : ""}">${label}</button>`).join("")}<label class="mux-threshold">Minimum <input data-action="threshold" type="number" min="0" step="1" value="${model.threshold || ""}" placeholder="0" /></label></div>
       <div><span>Inspection scale</span>${[["month", "Month"], ["day", "Day"], ["slot", "30 min"], ["session", "Session"]].map(([key, label]) => `<button data-action="zoom" data-zoom="${key}" class="${model.zoom === key ? "is-active" : ""}" ${key === "session" && !model.selectedSessionId ? "disabled" : ""}>${label}</button>`).join("")}</div>
+      <div><span>Table date/time</span>${[["desc", "Newest first ↓"], ["asc", "Oldest first ↑"]].map(([key, label]) => `<button data-action="sort" data-sort="${key}" class="${model.sortDirection === key ? "is-active" : ""}" aria-pressed="${model.sortDirection === key}">${label}</button>`).join("")}</div>
     </div>
     <p class="mux-filter-summary">${model.filteredEvents.length.toLocaleString()} matching events · ${model.view.sessions.length.toLocaleString()} sessions · ${model.referenceMonth ? `locked comparison against ${formatMonth(model.referenceMonth)}` : "adaptive scale"} · URL preserves this investigation</p>
-  </section>`;
+    </div></section>`;
 }
 
 function systemStrip(model, compact = false) {
@@ -410,7 +438,8 @@ function cumulativeChart(model, height = 240) {
 
 function incidentList(model, limit = 7) {
   const score = (slot) => model.anomalyMode === "jump" ? `${Math.round(slot.jumpPercent).toLocaleString()}% vs previous slot` : model.anomalyMode === "unusual" ? `${slot.multiple.toFixed(1)}× normal for this time` : `${slot.multiple.toFixed(1)}× occupied-slot median`;
-  return `<ol class="mux-incidents">${model.view.topSlots.slice(0, limit).map((slot) => `<li class="${slot.id === model.selectedSlotId ? "is-selected" : ""}">
+  const slots = sortSlotsByDateTime(model.view.topSlots.slice(0, limit), model.sortDirection);
+  return `<ol class="mux-incidents" aria-label="Top usage intervals, ${sortLabel(model.sortDirection).toLowerCase()}">${slots.map((slot) => `<li class="${slot.id === model.selectedSlotId ? "is-selected" : ""}">
     <button data-action="slot" data-slot="${slot.id}"><span>#${String(slot.rank).padStart(2, "0")}</span><time>${slot.day.slice(-2)} · ${clock(slot.bucket * 30)}</time><strong>${formatValue(slot.total, model.unit)}</strong><small>${slot.events.length} request${slot.events.length === 1 ? "" : "s"} · ${score(slot)}</small></button>
   </li>`).join("")}</ol>`;
 }
@@ -418,11 +447,12 @@ function incidentList(model, limit = 7) {
 function evidence(model, limit = 24) {
   const selected = model.view.slots.find((slot) => slot.id === model.selectedSlotId) || model.view.peakSlot;
   const session = model.selectedSessionId ? model.view.monthEvents.filter((event) => event.sessionId === model.selectedSessionId) : null;
-  const events = [...(session?.length ? session : selected?.events || [])].sort((left, right) => model.zoom === "session" ? Date.parse(left.at) - Date.parse(right.at) : unitValue(right, model.unit) - unitValue(left, model.unit));
+  const events = [...(session?.length ? session : selected?.events || [])]
+    .sort((left, right) => globalThis.SaxjaxDateTimeSort.compareDateTimes(left, right, model.sortDirection, (event) => event.startedAt));
   const value = events.filter((event) => Number.isFinite(event[model.unit])).reduce((sum, event) => sum + event[model.unit], 0);
   const missing = events.filter((event) => !Number.isFinite(event[model.unit])).length;
   return `<section class="mux-evidence">
-    <header><div><span>${session?.length ? "Selected session" : "Selected interval"}</span><h2>${session?.length ? escapeHtml(model.selectedSessionId) : `${selected?.day || "—"} · ${selected ? `${clock(selected.bucket * 30)}–${clock(selected.bucket * 30 + 30)}` : "—"}`}</h2></div><strong>${events.length && missing === events.length ? "— unavailable" : formatValue(value, model.unit)}</strong><small>${events.length} contributing requests · ${missing ? `${missing} unmeasured · ` : ""}${model.zoom === "session" ? "prompt in → response out" : "ranked by contribution"}</small></header>
+    <header><div><span>${session?.length ? "Selected session" : "Selected interval"}</span><h2>${session?.length ? escapeHtml(model.selectedSessionId) : `${selected?.day || "—"} · ${selected ? `${clock(selected.bucket * 30)}–${clock(selected.bucket * 30 + 30)}` : "—"}`}</h2></div><strong>${events.length && missing === events.length ? "— unavailable" : formatValue(value, model.unit)}</strong><small>${events.length} contributing requests · ${missing ? `${missing} unmeasured · ` : ""}${sortLabel(model.sortDirection)}</small></header>
     <div class="mux-evidence-list">${events.map((event, index) => `<article style="--family:${ORIGIN_COLORS[event.origin] || ORIGIN_COLORS.other}">
       <span>${String(index + 1).padStart(2, "0")}</span><div><b>${escapeHtml(event.model)} · ${escapeHtml(event.originLabel)}</b><p>${escapeHtml(event.prompt)}</p><small>${escapeHtml(event.source)}</small><em>${escapeHtml(event.providerLabel)} · ${escapeHtml(event.evidenceStatus)} ${escapeHtml(event.evidenceSource)} · ${escapeHtml(event.identityStrength)} identity${Number.isFinite(event.inputTokens) || Number.isFinite(event.outputTokens) ? ` · ${event.inputTokens?.toLocaleString() || "—"} in / ${event.outputTokens?.toLocaleString() || "—"} out` : ""}</em><button class="mux-copy-source" data-action="copy-source" data-event="${escapeHtml(event.id)}">Copy source reference</button></div><strong>${Number.isFinite(event[model.unit]) ? formatValue(event[model.unit], model.unit) : "— not measured"}</strong>
     </article>`).join("") || `<p class="mux-empty">No measured request started in this interval.</p>`}</div>
@@ -446,8 +476,8 @@ function sessionLanes(model) {
     if (Number.isFinite(event[model.unit])) group.measured += 1;
     groups.set(event.sessionId, group);
   }
-  const lanes = [...groups.values()].sort((left, right) => left.start - right.start || right.total - left.total);
-  return `<section class="mux-sessions"><header><div><span>Parallel session lanes · ${model.selectedDay}</span><h2>Who was running together?</h2></div><strong>${lanes.length} sessions</strong><small>Horizontal position is prompt start → final response. Colour is source; height never means concurrency.</small></header><div class="mux-session-scale"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div><div class="mux-session-list">${lanes.map((lane) => `<button data-action="session" data-session="${escapeHtml(lane.id)}" class="${lane.id === model.selectedSessionId ? "is-selected" : ""}"><span><b>${clock(lane.start)}–${clock(lane.end)}</b> ${escapeHtml(lane.provider)} · ${lane.events.length} request${lane.events.length === 1 ? "" : "s"}</span><i><em style="--left:${Math.max(0, lane.start / 1440 * 100)}%;--width:${Math.max(.6, (Math.min(1440, lane.end) - lane.start) / 1440 * 100)}%;--source:${ORIGIN_COLORS[lane.origin] || ORIGIN_COLORS.other}"></em></i><strong>${lane.measured ? formatValue(lane.total, model.unit) : "—"}</strong></button>`).join("") || `<p class="mux-empty">No sessions were recorded on this day.</p>`}</div></section>`;
+  const lanes = [...groups.values()].sort((left, right) => globalThis.SaxjaxDateTimeSort.compareValues(left.start, right.start, model.sortDirection) || right.total - left.total);
+  return `<section class="mux-sessions"><header><div><span>Parallel session lanes · ${model.selectedDay}</span><h2>Who was running together?</h2></div><strong>${lanes.length} sessions</strong><small>${sortLabel(model.sortDirection)} · Horizontal position is prompt start → final response. Colour is source; height never means concurrency.</small></header><div class="mux-session-scale"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div><div class="mux-session-list">${lanes.map((lane) => `<button data-action="session" data-session="${escapeHtml(lane.id)}" class="${lane.id === model.selectedSessionId ? "is-selected" : ""}"><span><b>${clock(lane.start)}–${clock(lane.end)}</b> ${escapeHtml(lane.provider)} · ${lane.events.length} request${lane.events.length === 1 ? "" : "s"}</span><i><em style="--left:${Math.max(0, lane.start / 1440 * 100)}%;--width:${Math.max(.6, (Math.min(1440, lane.end) - lane.start) / 1440 * 100)}%;--source:${ORIGIN_COLORS[lane.origin] || ORIGIN_COLORS.other}"></em></i><strong>${lane.measured ? formatValue(lane.total, model.unit) : "—"}</strong></button>`).join("") || `<p class="mux-empty">No sessions were recorded on this day.</p>`}</div></section>`;
 }
 
 function resourceTrack(label, values, unavailable = false) {
@@ -513,18 +543,22 @@ function VariantB(model) {
   </div>`;
 }
 
-function VariantC(model) {
+function machineRoomPanel(model, includePower = true) {
   const system = model.system;
+  return `<aside class="mux-c-machine" data-severity="${system.severity}">
+    <div class="mux-c-verdict"><i></i><span>Present condition</span><strong data-live="verdict">${system.severity.toUpperCase()}</strong><p>${system.severity === "pressure" ? "One or more resources are beyond the comfortable operating range." : "The host has capacity for more local work."}</p>${includePower ? powerSwitch(model) : ""}</div>
+    <div class="mux-c-gauges"><div style="--g:${system.cpu}%"><span>CPU</span><b data-live="cpu">${Math.round(system.cpu)}%</b></div><div style="--g:${system.memory}%"><span>Memory</span><b data-live="memory">${Math.round(system.memory)}%</b></div><div style="--g:${system.loadRatio * 100}%"><span>Queue</span><b data-live="load">${Math.round(system.loadRatio * 100)}%</b></div></div>
+    <section><span>Core dispatch</span>${coreRack(model)}</section>
+    <dl><div><dt>Ollama</dt><dd data-live="server">${system.online ? "ONLINE" : "OFFLINE"}</dd></div><div><dt>Resident</dt><dd data-live="model">${escapeHtml(system.model)}</dd></div><div><dt>Allocation</dt><dd data-live="modelMeta">${escapeHtml(system.modelSize)} · ${escapeHtml(system.processor)}</dd></div><div><dt>Ollama CPU</dt><dd data-live="ollamaCpu">${Math.round(system.ollamaCpu)}%</dd></div><div><dt>Requests</dt><dd>${system.active} active / ${system.total} total</dd></div></dl>
+  </aside>`;
+}
+
+function VariantC(model) {
   return `<div class="mux mux-c">
     <header class="mux-c-head"><div><span>LOCAL INFERENCE / CONTROL ROOM</span><h1>Machine room</h1></div><div class="mux-c-clock">${formatMonth(model.month)}<b>${formatValue(model.view.total, model.unit)}</b><small>${unitLabel(model.unit)}</small></div><div class="mux-c-controls">${commonHeader(model, "", "").match(/<div class="mux-period">[\s\S]*?<\/div>\s*<div class="mux-total">/)?.[0].replace('<div class="mux-total">', '') || ""}</div></header>
     ${controlDeck(model)}
     <main class="mux-c-layout">
-      <aside class="mux-c-machine" data-severity="${system.severity}">
-        <div class="mux-c-verdict"><i></i><span>Present condition</span><strong data-live="verdict">${system.severity.toUpperCase()}</strong><p>${system.severity === "pressure" ? "One or more resources are beyond the comfortable operating range." : "The host has capacity for more local work."}</p>${powerSwitch(model)}</div>
-        <div class="mux-c-gauges"><div style="--g:${system.cpu}%"><span>CPU</span><b data-live="cpu">${Math.round(system.cpu)}%</b></div><div style="--g:${system.memory}%"><span>Memory</span><b data-live="memory">${Math.round(system.memory)}%</b></div><div style="--g:${system.loadRatio * 100}%"><span>Queue</span><b data-live="load">${Math.round(system.loadRatio * 100)}%</b></div></div>
-        <section><span>Core dispatch</span>${coreRack(model)}</section>
-        <dl><div><dt>Ollama</dt><dd data-live="server">${system.online ? "ONLINE" : "OFFLINE"}</dd></div><div><dt>Resident</dt><dd data-live="model">${escapeHtml(system.model)}</dd></div><div><dt>Allocation</dt><dd data-live="modelMeta">${escapeHtml(system.modelSize)} · ${escapeHtml(system.processor)}</dd></div><div><dt>Ollama CPU</dt><dd data-live="ollamaCpu">${Math.round(system.ollamaCpu)}%</dd></div><div><dt>Requests</dt><dd>${system.active} active / ${system.total} total</dd></div></dl>
-      </aside>
+      ${machineRoomPanel(model)}
       <section class="mux-c-usage"><header><span>${model.zoom === "month" ? "Month oscilloscope" : `${model.selectedDay} oscilloscope`} · 30-minute samples</span><h2>Usage amplitude</h2><p>${unitLabel(model.unit)} amplitude is coloured by source. The outline marks overlap, so expensive and merely parallel work remain distinct.</p>${legend(model)}</header>${slotChart(model, model.selectedDay, 370, model.zoom === "month")}
         <div class="mux-c-ruler"><span>Quiet</span><i></i><b>Selected ${model.selectedSlotId.replace(":", " / ")}</b><i></i><span>Explosive</span></div>
         ${evidence(model, 20)}
@@ -549,7 +583,7 @@ function VariantD(model) {
     ${commonHeader(model, "Month contact sheet", "Every day is a strip of film. Scan the silhouette, open the frame, read the source note.")}
     ${controlDeck(model)}
     <main class="mux-d-layout">
-      <section class="mux-d-film"><header><span>${formatMonth(model.month)} / 30-minute silhouettes</span><div>${legend(model)}</div></header>${model.view.daily.filter((day) => model.zoom === "month" || day.day === model.selectedDay).map((day) => dayFilm(day, model)).join("")}</section>
+      <section class="mux-d-film"><header><span>${formatMonth(model.month)} / 30-minute silhouettes · ${sortLabel(model.sortDirection)}</span><div>${legend(model)}</div></header>${sortedDays(model).filter((day) => model.zoom === "month" || day.day === model.selectedDay).map((day) => dayFilm(day, model)).join("")}</section>
       <aside class="mux-d-report"><span>Pulled frame</span><h2>${model.selectedDay}</h2>${slotChart(model, model.selectedDay, 185)}${evidence(model, 12)}</aside>
       <footer>${systemStrip(model)}</footer>
     </main>
@@ -573,21 +607,86 @@ function VariantE(model) {
   </div>`;
 }
 
+const CUSTOM_SECTION_LABELS = {
+  timeline: "Usage timeline", spikes: "Spike ranking", evidence: "Prompt and request evidence", system: "Live system state",
+  sessions: "Parallel session lanes", resources: "Usage and resource correlation", accumulated: "Accumulated usage", "provider-evidence": "Provider evidence",
+};
+
+function customTimeline(model, source) {
+  const selected = model.view.slots.find((slot) => slot.id === model.selectedSlotId) || model.view.peakSlot;
+  if (source === "A") return `<section class="mux-a-chart"><div class="mux-section-title"><span>${model.zoom === "month" ? "COST ALTITUDE BY DAY" : `${model.selectedDay} INVESTIGATION`}</span><h2>Where did the month jump?</h2>${legend(model)}</div>${model.zoom === "month" ? dailyChart(model, 285) : slotChart(model, model.selectedDay, 285)}<div class="mux-day-slice"><header><span>${model.selectedDay} · 30-minute resolution</span><strong>Peak ${formatValue(model.view.slots.filter((slot) => slot.day === model.selectedDay).reduce((peak, slot) => Math.max(peak, slot.total), 0), model.unit)}</strong></header>${slotChart(model, model.selectedDay, 190)}</div></section>`;
+  if (source === "B") return `<section class="mux-b-scope"><div class="mux-b-scopehead"><span>Accumulated ${unitLabel(model.unit)}</span><strong>${formatValue(model.view.total, model.unit)}</strong><small>Every needle is an exact 30-minute contribution.</small></div>${model.zoom === "month" ? cumulativeChart(model, 330) : slotChart(model, model.selectedDay, 330)}<div class="mux-b-selected"><span>Cursor</span><b>${selected.day.slice(-2)} / ${clock(selected.bucket * 30)}</b><strong>${formatValue(selected.total, model.unit)}</strong><small>${selected.events.length} requests</small></div></section>`;
+  if (source === "C") return `<section class="mux-c-usage"><header><span>${model.zoom === "month" ? "MONTH OSCILLOSCOPE" : `${model.selectedDay} OSCILLOSCOPE`}</span><h2>Usage amplitude</h2><p>Height is usage; colour is source.</p>${legend(model)}</header>${slotChart(model, model.selectedDay, 370, model.zoom === "month")}<div class="mux-c-ruler"><span>Quiet</span><i></i><b>Selected ${model.selectedSlotId.replace(":", " / ")}</b><i></i><span>Explosive</span></div></section>`;
+  if (source === "D") return `<section class="mux-d-film"><header><span>${formatMonth(model.month)} / 30-minute silhouettes · ${sortLabel(model.sortDirection)}</span>${legend(model)}</header>${sortedDays(model).filter((day) => model.zoom === "month" || day.day === model.selectedDay).map((day) => dayFilm(day, model)).join("")}</section>`;
+  return `<section class="mux-e-horizon"><header><span>${model.zoom === "month" ? "MONTH" : "DAY"} HORIZON</span><h2>Expense by 30-minute interval</h2><p>Arrows move the cursor. Coloured height is usage.</p></header>${slotChart(model, model.selectedDay, 285, model.zoom === "month")}</section>`;
+}
+
+function customSpikes(model, source) {
+  if (source === "A") return `<aside class="mux-a-index"><span>Flight marks</span><h2>Largest jumps</h2><p>Ranked against the median occupied interval.</p>${incidentList(model, 10)}</aside>`;
+  if (source === "B") return `<aside class="mux-b-quakes"><header><span>Recorded shocks</span><b>${model.view.topSlots.length}</b></header>${incidentList(model, 12)}</aside>`;
+  if (source === "E") return `<aside class="mux-e-ranking"><header><span>RANK</span><span>TIME</span><span>VALUE / CAUSE</span></header>${incidentList(model, 12)}</aside>`;
+  return `<aside class="mux-custom-ranking"><span>${source === "C" ? "INSTRUMENT FLAGS" : "PULLED FRAMES"}</span><h2>Intervals worth opening</h2>${incidentList(model, 12)}</aside>`;
+}
+
+function customEvidence(model, source) {
+  if (source === "B") return `<aside class="mux-b-proof">${evidence(model, 24)}</aside>`;
+  if (source === "D") return `<div class="mux-d-report"><span>Pulled evidence</span><h2>${model.selectedDay}</h2>${evidence(model, 24)}</div>`;
+  if (source === "E") return `<section class="mux-e-selected">${evidence(model, 30)}</section>`;
+  return evidence(model, 30);
+}
+
+function customSystem(model, source) {
+  if (source === "C") return machineRoomPanel(model, false);
+  if (source === "E") return `<aside class="mux-e-machine"><header><span>HOST LEDGER</span><b data-live="verdict">${model.system.severity.toUpperCase()}</b></header>${systemStrip(model, true)}${coreRack(model)}</aside>`;
+  return systemStrip(model, source !== "B");
+}
+
+function customSection(model, section) {
+  const source = section.sourceVariant || "A";
+  let content = "";
+  if (section.id === "timeline") content = customTimeline(model, source);
+  if (section.id === "spikes") content = customSpikes(model, source);
+  if (section.id === "evidence") content = customEvidence(model, source);
+  if (section.id === "system") content = customSystem(model, source);
+  if (section.id === "sessions") content = sessionLanes(model);
+  if (section.id === "resources") content = resourceCorrelation(model);
+  if (section.id === "accumulated") content = cumulativeNavigator(model);
+  if (section.id === "provider-evidence") content = truthPanel(model);
+  return `<section class="mux mux-${source.toLowerCase()} mux-custom-piece" data-piece="${section.id}" data-source-variant="${source}"><header class="mux-piece-label"><span>${escapeHtml(CUSTOM_SECTION_LABELS[section.id] || section.id)}</span><b>FROM ${source} · ${escapeHtml(VARIANTS[source])}</b></header>${content}</section>`;
+}
+
+function CustomView(model, layout) {
+  const visible = (layout?.sections || []).filter((section) => section.enabled !== false);
+  const shell = layout?.shellVariant || "A";
+  return `<div class="mux mux-custom" data-shell="${shell}">
+    <header class="mux-custom-head"><div><span>MY MONITOR / SHELL ${shell}</span><h1>Usage, assembled.</h1><p>One live monitor composed from the prototype instruments you chose.</p></div><div class="mux-custom-period"><label>Period<select data-action="month">${model.months.map((item) => `<option value="${item}" ${item === model.month ? "selected" : ""}>${formatMonth(item)}</option>`).join("")}</select></label><div class="mux-unit">${[["tokens", "Tokens"], ["credits", "Provider units"], ["dollars", "Money"]].map(([key, label]) => `<button data-action="unit" data-unit="${key}" class="${model.unit === key ? "is-active" : ""}" ${model.capabilities[key].available ? "" : "disabled"}>${label}</button>`).join("")}</div></div><div class="mux-custom-total"><span>${formatMonth(model.month)} total</span><strong>${model.capabilities[model.unit].available ? formatValue(model.view.total, model.unit) : "Unavailable"}</strong>${powerSwitch(model)}</div></header>
+    ${controlDeck(model)}
+    <div class="mux-recipe"><span>${visible.length} live sections · frame from ${shell}</span><p>${visible.map((section) => `${CUSTOM_SECTION_LABELS[section.id]} ${section.sourceVariant}`).join(" · ")}</p><button data-action="layout-studio">Edit layout</button></div>
+    <main class="mux-custom-grid">${visible.map((section) => customSection(model, section)).join("")}</main>
+  </div>`;
+}
+
 async function startMonitorPrototype() {
   document.documentElement.classList.add("monitor-ux-prototype-active");
   const root = document.createElement("div");
   root.id = "monitor-ux-prototype-root";
   document.body.prepend(root);
 
-  const [timelineResponse, stateResponse] = await Promise.all([
+  const [timelineResponse, stateResponse, feedbackResponse] = await Promise.all([
     fetch("/monitor/api/usage-timeline", { cache: "no-store" }),
     fetch("/monitor/api/state", { cache: "no-store" }),
+    fetch("/monitor/api/prototype-feedback", { cache: "no-store" }),
   ]);
   const timeline = await timelineResponse.json();
+  let feedbackSnapshot = await feedbackResponse.json();
   let liveState = await stateResponse.json();
   let events = normalizeEvents(timeline);
   let months = [...new Set(events.map((event) => event.month))].sort();
-  let variant = VARIANTS[params.get("variant")?.toUpperCase()] ? params.get("variant").toUpperCase() : "A";
+  let preferredView = feedbackSnapshot.preferredView || { mode: "classic", variant: "A", layout: { shellVariant: "A", sections: [] } };
+  const openPreferred = params.get("view") === "preferred";
+  let customMode = params.get("layout") === "custom" || (openPreferred && preferredView.mode === "custom");
+  const requestedVariant = params.get("variant")?.toUpperCase();
+  let variant = VARIANTS[requestedVariant] ? requestedVariant : openPreferred && preferredView.mode === "variant" ? preferredView.variant : customMode ? preferredView.layout?.shellVariant || "A" : "A";
   let unit = ["tokens", "credits", "dollars"].includes(params.get("unit")) ? params.get("unit") : "credits";
   let month = months.includes(params.get("month")) ? params.get("month") : months.reduce((latest, item) => events.filter((event) => event.month === item).length >= 10 ? item : latest, months.at(-1));
   let referenceMonth = months.includes(params.get("reference")) && params.get("reference") !== month ? params.get("reference") : null;
@@ -597,6 +696,8 @@ async function startMonitorPrototype() {
   let zoom = ["month", "day", "slot", "session"].includes(params.get("zoom")) ? params.get("zoom") : "month";
   let anomalyMode = ["value", "jump", "unusual"].includes(params.get("anomaly")) ? params.get("anomaly") : "value";
   let threshold = Math.max(0, Number(params.get("threshold")) || 0);
+  let sortDirection = globalThis.SaxjaxDateTimeSort.normalize(params.get("sort"));
+  let controlsOpen = false;
   const filters = {
     provider: params.get("provider") || "all",
     origin: params.get("origin") || "all",
@@ -657,7 +758,7 @@ async function startMonitorPrototype() {
     const providerLabels = Object.fromEntries(providers.map((provider) => [provider, PROVIDER_RULES[provider]?.label || provider]));
     const billingReads = capabilities.providers.length > 0 && capabilities.providers.every((provider) => PROVIDER_RULES[provider]?.billingReads === true);
     return {
-      variant, unit, month, months, referenceMonth, view, referenceView, selectedDay, selectedSlotId, selectedSessionId, zoom, anomalyMode, threshold,
+      variant, customMode, unit, month, months, referenceMonth, view, referenceView, selectedDay, selectedSlotId, selectedSessionId, zoom, anomalyMode, threshold, sortDirection, controlsOpen,
       filters, filteredEvents, capabilities, billingReads, system: systemView(liveState), liveSamples, powerPending, powerError,
       options: { providers, origins, models, providerLabels },
     };
@@ -667,20 +768,20 @@ async function startMonitorPrototype() {
     const current = model();
     syncUrl();
     const views = { A: VariantA, B: VariantB, C: VariantC, D: VariantD, E: VariantE };
-    root.className = `monitor-ux-root variant-${variant.toLowerCase()}`;
-    root.innerHTML = `${views[variant](current)}${switcher()}`;
-    document.title = `${variant} — ${VARIANTS[variant]} — Saxjax prototype`;
+    root.className = `monitor-ux-root ${customMode ? "variant-custom" : `variant-${variant.toLowerCase()}`}`;
+    const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
+    const browserLabEntry = labEnabled ? "" : `<a class="mux-lab-entry" href="/monitor/?prototype=monitor&view=preferred">Prototype lab</a>`;
+    root.innerHTML = `${view}${browserLabEntry}`;
+    document.title = customMode ? "My mixed monitor — Saxjax" : `${variant} — ${VARIANTS[variant]} — Saxjax ${labEnabled ? "prototype" : "Monitor"}`;
     bind();
     feedbackLab?.decorate();
-  }
-
-  function switcher() {
-    return `<nav class="mux-switcher" aria-label="Monitor prototypes"><button data-action="variant-step" data-step="-1" aria-label="Previous prototype">←</button><div><small>THROWAWAY PROTOTYPE</small><strong>${variant} — ${VARIANTS[variant]}</strong></div><button data-action="variant-step" data-step="1" aria-label="Next prototype">→</button></nav>`;
   }
 
   function syncUrl() {
     params.set("prototype", "monitor");
     params.set("variant", variant);
+    params.delete("view");
+    if (customMode) params.set("layout", "custom"); else params.delete("layout");
     params.set("unit", unit);
     params.set("month", month);
     params.set("day", selectedDay);
@@ -689,6 +790,7 @@ async function startMonitorPrototype() {
     if (selectedSessionId) params.set("session", selectedSessionId); else params.delete("session");
     params.set("zoom", zoom);
     params.set("anomaly", anomalyMode);
+    if (sortDirection === "asc") params.set("sort", "asc"); else params.delete("sort");
     if (threshold > 0) params.set("threshold", String(threshold)); else params.delete("threshold");
     for (const [key, value] of Object.entries(filters)) {
       if (value && value !== "all") params.set(key, value); else params.delete(key);
@@ -697,6 +799,7 @@ async function startMonitorPrototype() {
   }
 
   function stepVariant(step) {
+    if (customMode) return;
     const keys = Object.keys(VARIANTS);
     feedbackLab?.track("navigation.variant");
     variant = keys[(keys.indexOf(variant) + step + keys.length) % keys.length];
@@ -722,7 +825,7 @@ async function startMonitorPrototype() {
   }
 
   function bind() {
-    root.querySelectorAll('[data-action="variant-step"]').forEach((button) => button.addEventListener("click", () => stepVariant(Number(button.dataset.step))));
+    root.querySelectorAll('[data-action="controls-toggle"]').forEach((button) => button.addEventListener("click", () => { controlsOpen = !controlsOpen; render(); }));
     root.querySelectorAll('[data-action="unit"]').forEach((button) => button.addEventListener("click", () => { unit = button.dataset.unit; selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="month"]').forEach((select) => select.addEventListener("change", () => { month = select.value; if (referenceMonth === month) referenceMonth = null; selectedDay = null; selectedSlotId = null; selectedSessionId = null; zoom = "month"; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="day"]').forEach((element) => element.addEventListener("click", () => { selectedDay = element.dataset.day; const daySlots = model().view.slots.filter((slot) => slot.day === selectedDay); selectedSlotId = daySlots.reduce((peak, slot) => slot.total > peak.total ? slot : peak, daySlots[0]).id; selectedSessionId = null; zoom = "day"; syncUrl(); render(); }));
@@ -734,6 +837,11 @@ async function startMonitorPrototype() {
     root.querySelectorAll('[data-action="anomaly"]').forEach((button) => button.addEventListener("click", () => { anomalyMode = button.dataset.mode; selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="threshold"]').forEach((input) => input.addEventListener("change", () => { threshold = Math.max(0, Number(input.value) || 0); selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="zoom"]').forEach((button) => button.addEventListener("click", () => { zoom = button.dataset.zoom; if (zoom !== "session") selectedSessionId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="sort"]').forEach((button) => button.addEventListener("click", () => { sortDirection = globalThis.SaxjaxDateTimeSort.normalize(button.dataset.sort); syncUrl(); render(); window.dispatchEvent(new CustomEvent("saxjax-date-sort-change", { detail: { direction: sortDirection } })); }));
+    root.querySelectorAll('[data-action="layout-studio"]').forEach((button) => button.addEventListener("click", () => {
+      if (feedbackLab) feedbackLab.openStudio();
+      else location.assign("/monitor/?prototype=monitor&view=preferred&studio=layout");
+    }));
     root.querySelectorAll('[data-action="ollama-power"]').forEach((button) => button.addEventListener("click", async () => {
       if (powerPending) return;
       const enabled = !systemView(liveState).online;
@@ -784,10 +892,18 @@ async function startMonitorPrototype() {
 
   window.addEventListener("keydown", (event) => {
     const target = event.target;
-    if (document.querySelector(".pfl-comparison, .pfl-composer")) return;
+    if (!labEnabled || customMode || document.querySelector(".pfl-comparison, .pfl-composer, .pfl-default-menu, .pfl-studio")) return;
     if (target.matches("input, textarea, select, [contenteditable], [data-timeline-keyboard]")) return;
     if (event.key === "ArrowLeft") stepVariant(-1);
     if (event.key === "ArrowRight") stepVariant(1);
+  });
+
+  window.addEventListener("saxjax-date-sort-change", (event) => {
+    const direction = globalThis.SaxjaxDateTimeSort.normalize(event.detail?.direction);
+    if (direction === sortDirection) return;
+    sortDirection = direction;
+    syncUrl();
+    render();
   });
 
   const stream = new EventSource("/monitor/events");
@@ -800,23 +916,36 @@ async function startMonitorPrototype() {
     render();
   });
 
-  const { createPrototypeFeedbackLab } = await import("/monitor/prototype-feedback-lab.js");
-  feedbackLab = await createPrototypeFeedbackLab({
-    prototypeRoot: root,
-    variants: VARIANTS,
-    getContext: () => ({
-      variant, month, unit, zoom, day: selectedDay, slot: selectedSlotId,
-      session: selectedSessionId, provider: filters.provider, origin: filters.origin, model: filters.model,
-    }),
-    changeVariant: (next) => {
-      if (!VARIANTS[next]) return;
-      variant = next;
-      syncUrl();
-      render();
-      feedbackLab?.variantChanged(variant);
-    },
+  if (labEnabled) {
+    const { createPrototypeFeedbackLab } = await import("/monitor/prototype-feedback-lab.js");
+    feedbackLab = await createPrototypeFeedbackLab({
+      prototypeRoot: root,
+      variants: VARIANTS,
+      initialState: feedbackSnapshot,
+      getContext: () => ({
+        variant: customMode ? "CUSTOM" : variant, custom: customMode, month, unit, zoom, day: selectedDay, slot: selectedSlotId,
+        session: selectedSessionId, provider: filters.provider, origin: filters.origin, model: filters.model,
+      }),
+      changeVariant: (next) => {
+        if (!VARIANTS[next]) return;
+        customMode = false;
+        variant = next;
+        syncUrl();
+        render();
+        feedbackLab?.variantChanged(variant);
+      },
+      activatePreference: (preferred) => {
+        preferredView = preferred;
+        location.assign("/monitor/");
+      },
+    });
+    if (params.get("studio") === "layout") feedbackLab.openStudio();
+  }
+  stream.addEventListener("prototype-feedback", (event) => {
+    feedbackSnapshot = JSON.parse(event.data);
+    preferredView = feedbackSnapshot.preferredView || preferredView;
+    feedbackLab?.update(feedbackSnapshot);
   });
-  stream.addEventListener("prototype-feedback", (event) => feedbackLab?.update(JSON.parse(event.data)));
 
   render();
 }

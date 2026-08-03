@@ -2,13 +2,35 @@
 
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
 export const PROTOTYPE_FEEDBACK_SCHEMA_VERSION = 1;
 export const PROTOTYPE_ID = "monitor-ux-2026-08";
 
 const COMMENT_LIMIT = 10_000;
 const ACTIVITY_LIMIT = 10_000;
+const VARIANT_KEYS = new Set(["A", "B", "C", "D", "E"]);
+const SECTION_IDS = ["timeline", "spikes", "evidence", "system", "sessions", "resources", "accumulated", "provider-evidence"];
+
+function defaultPreferredView() {
+  return {
+    mode: "classic",
+    variant: "A",
+    layout: {
+      shellVariant: "A",
+      sections: [
+        { id: "timeline", sourceVariant: "A", enabled: true },
+        { id: "spikes", sourceVariant: "B", enabled: true },
+        { id: "evidence", sourceVariant: "E", enabled: true },
+        { id: "system", sourceVariant: "C", enabled: true },
+        { id: "sessions", sourceVariant: "A", enabled: true },
+        { id: "resources", sourceVariant: "C", enabled: true },
+        { id: "accumulated", sourceVariant: "B", enabled: true },
+        { id: "provider-evidence", sourceVariant: "E", enabled: true },
+      ],
+    },
+  };
+}
 
 function text(value, maximum = 200) {
   if (typeof value !== "string") return "";
@@ -28,6 +50,7 @@ function emptyState() {
     comments: [],
     activity: [],
     importedBundles: [],
+    preferredView: defaultPreferredView(),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -89,6 +112,25 @@ function sanitizeActivity(candidate, installationId, now = new Date().toISOStrin
   };
 }
 
+function sanitizePreferredView(candidate) {
+  const fallback = defaultPreferredView();
+  const mode = ["classic", "variant", "custom"].includes(candidate?.mode) ? candidate.mode : fallback.mode;
+  const variant = VARIANT_KEYS.has(candidate?.variant) ? candidate.variant : fallback.variant;
+  const shellVariant = VARIANT_KEYS.has(candidate?.layout?.shellVariant) ? candidate.layout.shellVariant : fallback.layout.shellVariant;
+  const supplied = Array.isArray(candidate?.layout?.sections) ? candidate.layout.sections : fallback.layout.sections;
+  const byId = new Map();
+  for (const item of supplied) {
+    if (!SECTION_IDS.includes(item?.id) || byId.has(item.id)) continue;
+    byId.set(item.id, {
+      id: item.id,
+      sourceVariant: VARIANT_KEYS.has(item.sourceVariant) ? item.sourceVariant : variant,
+      enabled: ["timeline", "evidence", "system"].includes(item.id) ? true : item.enabled !== false,
+    });
+  }
+  for (const item of fallback.layout.sections) if (!byId.has(item.id)) byId.set(item.id, item);
+  return { mode, variant, layout: { shellVariant, sections: [...byId.values()] } };
+}
+
 function sanitizeLoaded(candidate) {
   const fallback = emptyState();
   if (candidate?.schemaVersion !== PROTOTYPE_FEEDBACK_SCHEMA_VERSION) return fallback;
@@ -101,6 +143,7 @@ function sanitizeLoaded(candidate) {
     comments: (Array.isArray(candidate.comments) ? candidate.comments : []).map((item) => sanitizeComment(item, reviewer)).filter(Boolean).slice(-COMMENT_LIMIT),
     activity: (Array.isArray(candidate.activity) ? candidate.activity : []).map((item) => sanitizeActivity(item, installationId)).filter(Boolean).slice(-ACTIVITY_LIMIT),
     importedBundles: (Array.isArray(candidate.importedBundles) ? candidate.importedBundles : []).map((item) => text(item, 120)).filter(Boolean).slice(-1_000),
+    preferredView: sanitizePreferredView(candidate.preferredView),
     updatedAt: instant(candidate.updatedAt),
   };
 }
@@ -138,6 +181,11 @@ export async function createPrototypeFeedbackStore({ dataDir, fileName = "protot
     snapshot: () => clone(state),
     async setReviewer(candidate) {
       state.reviewer = sanitizeReviewer(candidate, state.reviewer);
+      await persist();
+      return clone(state);
+    },
+    async setPreferredView(candidate) {
+      state.preferredView = sanitizePreferredView(candidate);
       await persist();
       return clone(state);
     },
@@ -222,9 +270,9 @@ export async function createPrototypeFeedbackStore({ dataDir, fileName = "protot
       };
     },
     async reset() {
-      const identity = { installationId: state.installationId, reviewer: state.reviewer };
+      const identity = { installationId: state.installationId, reviewer: state.reviewer, preferredView: state.preferredView };
       state = { ...emptyState(), ...identity };
-      await unlink(filePath).catch((error) => { if (error.code !== "ENOENT") throw error; });
+      await persist();
       return clone(state);
     },
   };

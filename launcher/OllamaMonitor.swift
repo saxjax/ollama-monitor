@@ -89,9 +89,13 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         browserItem.target = self
         viewMenu.addItem(browserItem)
         viewMenu.addItem(.separator())
-        let monitorItem = NSMenuItem(title: "Open Monitor", action: #selector(openMonitor), keyEquivalent: "m")
+        let monitorItem = NSMenuItem(title: "Open Default Monitor", action: #selector(openMonitor), keyEquivalent: "m")
         monitorItem.target = self
         viewMenu.addItem(monitorItem)
+        let classicItem = NSMenuItem(title: "Open Classic Monitor", action: #selector(openClassicMonitor), keyEquivalent: "m")
+        classicItem.keyEquivalentModifierMask = [.command, .shift]
+        classicItem.target = self
+        viewMenu.addItem(classicItem)
         let prototypeItem = NSMenuItem(title: "Open Prototype Lab", action: #selector(openPrototypeLab), keyEquivalent: "p")
         prototypeItem.target = self
         viewMenu.addItem(prototypeItem)
@@ -114,6 +118,11 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.userContentController.add(self, name: "prototypeExport")
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "document.documentElement.classList.add('saxjax-native-app'); window.__SAXJAX_NATIVE_APP__ = true;",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -315,7 +324,7 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         var components = URLComponents(url: monitorURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "prototype", value: "monitor"),
-            URLQueryItem(name: "variant", value: "A")
+            URLQueryItem(name: "view", value: "preferred")
         ]
         if compare {
             components.queryItems?.append(URLQueryItem(name: "review", value: "compare"))
@@ -344,6 +353,12 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         loadSurface(monitorURL)
     }
 
+    @objc private func openClassicMonitor() {
+        var components = URLComponents(url: monitorURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "surface", value: "classic")]
+        loadSurface(components.url!)
+    }
+
     @objc private func openPrototypeLab() {
         loadSurface(prototypeURL())
     }
@@ -355,7 +370,9 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     @objc private func togglePrototypeSurface() {
         let components = webView.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
         let isPrototype = components?.queryItems?.contains(where: { $0.name == "prototype" && $0.value == "monitor" }) == true
-        if isPrototype { openMonitor() } else { openPrototypeLab() }
+        let isDefaultSurface = components?.queryItems?.contains(where: { $0.name == "surface" && $0.value == "default" }) == true
+        let isLab = isPrototype && !isDefaultSurface
+        if isLab { openMonitor() } else { openPrototypeLab() }
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -401,8 +418,10 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         loadAttempts = 0
         let components = webView.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
         let isPrototype = components?.queryItems?.contains(where: { $0.name == "prototype" && $0.value == "monitor" }) == true
-        surfaceButton.title = isPrototype ? "MONITOR" : "LAB"
-        surfaceButton.toolTip = isPrototype ? "Return to the live monitor" : "Open the prototype review lab"
+        let isDefaultSurface = components?.queryItems?.contains(where: { $0.name == "surface" && $0.value == "default" }) == true
+        let isLab = isPrototype && !isDefaultSurface
+        surfaceButton.title = isLab ? "MONITOR" : "LAB"
+        surfaceButton.toolTip = isLab ? "Open the selected default monitor" : "Open the prototype review lab"
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

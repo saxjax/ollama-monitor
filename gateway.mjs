@@ -16,6 +16,7 @@ import { createPrototypeFeedbackStore } from "./prototype-feedback-store.mjs";
 import { createVsCodeInsidersImporter } from "./vscode-insiders-importer.mjs";
 import { captureCounters, captureSnapshot, combineCaptureState, finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
 import { forecastCopilotUsage, summarizeCopilotTokens } from "./copilot-forecast.mjs";
+import { preferredMonitorLocation } from "./monitor-surface-routing.mjs";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -841,10 +842,22 @@ async function serveAsset(response, name, contentType) {
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   if (requestUrl.pathname === "/monitor" || requestUrl.pathname === "/monitor/") {
+    if (!requestUrl.searchParams.has("prototype") && !requestUrl.searchParams.has("surface")) {
+      const preferred = prototypeFeedbackStore.snapshot().preferredView;
+      const location = preferredMonitorLocation(preferred);
+      if (location) {
+        response.writeHead(302, { location, "cache-control": "no-store" });
+        response.end();
+        return;
+      }
+    }
     return serveAsset(response, "index.html", "text/html; charset=utf-8");
   }
   if (requestUrl.pathname === "/monitor/styles.css") {
     return serveAsset(response, "styles.css", "text/css; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/date-time-sort.js") {
+    return serveAsset(response, "date-time-sort.js", "text/javascript; charset=utf-8");
   }
   if (requestUrl.pathname === "/monitor/monitor-ux-prototypes.css") {
     return serveAsset(response, "monitor-ux-prototypes.css", "text/css; charset=utf-8");
@@ -893,6 +906,16 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, snapshot);
     } catch (error) {
       return json(response, 400, { error: `Could not save reviewer: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/preferred-view" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype preferences are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.setPreferredView(await readJsonRequest(request, 32_768));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save preferred view: ${error.message}` });
     }
   }
   if (requestUrl.pathname === "/monitor/api/prototype-feedback/comment" && request.method === "POST") {

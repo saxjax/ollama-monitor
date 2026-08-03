@@ -182,8 +182,9 @@ Open the dashboard directly at
 
 ### Prototype review lab
 
-Open **View → Open Prototype Lab** in the native app, use the **Prototype lab**
-link in the dashboard, or open:
+Open **View → Open Prototype Lab** or the **LAB** surface button in the native
+app. Browser users get a **Prototype lab** link in the dashboard; that redundant
+link is hidden inside the native app. You can also open:
 
 ```text
 http://127.0.0.1:11435/monitor/?prototype=monitor&variant=A
@@ -191,7 +192,13 @@ http://127.0.0.1:11435/monitor/?prototype=monitor&variant=A
 
 All five monitor directions use the same local usage and system data and expose
 the same filters, units, time navigation, evidence, session lanes, and Ollama
-power control. The floating review tools add three workflows:
+power control. The floating review tools add four workflows:
+
+Date-based rows default to **Newest first**. The **Table date/time** control
+switches request evidence, session lanes, spike ledgers, day contact sheets, and
+review comments together between newest-first and oldest-first. Timeline graph
+axes remain chronological from left to right. The Classic monitor's request wire
+uses the same setting.
 
 - **Comment** marks commentable sections and controls. Click one to attach a
   keep/problem/idea/question note to its prototype and current investigation
@@ -202,6 +209,21 @@ power control. The floating review tools add three workflows:
 - **Export** creates a portable JSON review bundle. Colleagues can send their
   bundles back; import all of them on one Mac to merge the evidence without
   double-counting repeated imports.
+- **Default view** adopts the current A–E prototype, returns to the classic
+  monitor, or opens a composition studio. Mixed views choose, order, and retain
+  live sections from different prototypes and can become the native app's
+  startup surface. Adopting a prototype immediately opens that visual design as
+  the normal monitor, without the LAB evaluation dock.
+
+Prototype navigation and those four review actions share one movable black
+dock. Drag its dotted grip to move it out of the data, use the arrow keys while
+the grip is focused for precise movement, or double-click the grip to return it
+to the bottom centre.
+
+In the native app, **LAB** opens the selected design with evaluation controls;
+**MONITOR** returns to the selected default without them. **View → Open Classic
+Monitor** remains an explicit route to the original dashboard. In a browser,
+the normal prototype monitor keeps a small **Prototype lab** link instead.
 
 The bundle deliberately excludes captured prompt/response bodies and the usage
 timeline. It includes reviewer-written comments, selected section/item IDs,

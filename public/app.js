@@ -6,6 +6,7 @@ const sessions = new Map();
 const contentReader = $("#content-reader");
 const helpDialog = $("#help-dialog");
 const sessionFilter = $("#session-filter");
+const dateSort = $("#date-sort");
 const autofollow = $("#autofollow");
 const serverState = $("#server-state");
 const viewStateKey = "ollama-monitor-view-v1";
@@ -23,6 +24,9 @@ function readViewState() {
 }
 
 const savedViewState = readViewState();
+const requestedDateSort = new URLSearchParams(location.search).get("sort");
+let dateSortDirection = globalThis.SaxjaxDateTimeSort.normalize(requestedDateSort || savedViewState?.sortDirection);
+dateSort.value = dateSortDirection;
 
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (savedViewState) {
@@ -39,6 +43,7 @@ function persistViewState() {
       windowY: window.scrollY,
       streamTop: stream.scrollTop,
       session: sessionFilter.value,
+      sortDirection: dateSortDirection,
       openExchangeId: openExchange?.dataset.id || null,
       autofollow: autofollow.checked,
     }));
@@ -64,6 +69,8 @@ function restoreViewState() {
   if ([...sessionFilter.options].some((option) => option.value === savedViewState.session)) {
     sessionFilter.value = savedViewState.session;
   }
+  dateSort.value = dateSortDirection;
+  sortExchangeRows();
   autofollow.checked = savedViewState.autofollow !== false;
   applySessionFilter(false);
 
@@ -444,9 +451,17 @@ function applySessionFilter(openNewest = false) {
     element.hidden = selected !== "all" && element.dataset.sessionId !== selected;
   });
   if (openNewest) {
-    const newestVisible = [...stream.querySelectorAll(".exchange")].find((element) => !element.hidden);
+    const visible = [...stream.querySelectorAll(".exchange")].filter((element) => !element.hidden);
+    const newestVisible = dateSortDirection === "desc" ? visible[0] : visible.at(-1);
     expandOnly(newestVisible || null);
   }
+}
+
+function sortExchangeRows() {
+  const rows = [...stream.querySelectorAll(".exchange")].sort((left, right) =>
+    globalThis.SaxjaxDateTimeSort.compareDateTimes(left, right, dateSortDirection, (element) => element.dataset.startedAt),
+  );
+  rows.forEach((element) => stream.append(element));
 }
 
 function estimateTokens(characterCount, messageCount = 0) {
@@ -490,6 +505,7 @@ function ensureExchange(item, prepend = true) {
   const session = registerSession(item);
   element.dataset.id = item.id;
   element.dataset.model = item.model || "";
+  element.dataset.startedAt = item.startedAt || "";
   element.dataset.sessionId = session.id;
   element.dataset.source = item.source || "ollama";
   element.style.setProperty("--session-color", session.color);
@@ -596,7 +612,9 @@ function updateExchange(element, item) {
 }
 
 function follow() {
-  if (!restoringView && autofollow.checked) stream.scrollTop = 0;
+  if (!restoringView && autofollow.checked) {
+    stream.scrollTop = dateSortDirection === "desc" ? 0 : stream.scrollHeight;
+  }
 }
 
 function showEmptyState(title, detail) {
@@ -623,6 +641,7 @@ function resetHistoryView(state) {
     .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))
     .forEach((item) => ensureExchange(item, false));
   state.history.forEach((item) => ensureExchange(item, false));
+  sortExchangeRows();
   if (!state.active.length && !state.history.length) {
     const title = state.reason === "cleared" ? "History deleted" : "Listening for inference traffic";
     showEmptyState(title, "New Ollama and Copilot CLI requests will appear here and remain until you clear them.");
@@ -642,6 +661,7 @@ eventSource.addEventListener("state", (event) => {
     .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))
     .forEach((item) => ensureExchange(item, false));
   state.history.forEach((item) => ensureExchange(item, false));
+  sortExchangeRows();
   if (!initialStateRendered) {
     restoreViewState();
     initialStateRendered = true;
@@ -652,6 +672,7 @@ eventSource.addEventListener("copilot", (event) => renderCopilotUsage(JSON.parse
 eventSource.addEventListener("request-started", (event) => {
   const item = JSON.parse(event.data);
   const element = ensureExchange(item, true);
+  sortExchangeRows();
   applySessionFilter();
   if (element.hidden) setCollapsed(element, true);
   else {
@@ -673,6 +694,28 @@ eventSource.addEventListener("request-finished", (event) => {
   updateExchange(ensureExchange(item), item);
 });
 eventSource.addEventListener("history-reset", (event) => resetHistoryView(JSON.parse(event.data)));
+
+dateSort.addEventListener("change", () => {
+  dateSortDirection = globalThis.SaxjaxDateTimeSort.normalize(dateSort.value);
+  const url = new URL(location.href);
+  if (dateSortDirection === "asc") url.searchParams.set("sort", "asc"); else url.searchParams.delete("sort");
+  history.replaceState(null, "", url);
+  sortExchangeRows();
+  applySessionFilter(false);
+  follow();
+  scheduleViewStatePersistence();
+  window.dispatchEvent(new CustomEvent("saxjax-date-sort-change", { detail: { direction: dateSortDirection } }));
+});
+
+window.addEventListener("saxjax-date-sort-change", (event) => {
+  const direction = globalThis.SaxjaxDateTimeSort.normalize(event.detail?.direction);
+  if (direction === dateSortDirection) return;
+  dateSortDirection = direction;
+  dateSort.value = direction;
+  sortExchangeRows();
+  applySessionFilter(false);
+  scheduleViewStatePersistence();
+});
 
 stream.addEventListener("click", (event) => {
   const toggle = event.target.closest(".exchange-toggle");

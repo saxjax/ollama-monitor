@@ -25,7 +25,7 @@
         <span><b id="server-label">Connecting</b><small id="server-version">OLLAMA · POWER</small></span>
       </button>
       <div class="clock"><strong id="clock">--:--:--</strong><small id="clock-zone">LOCAL TIME</small></div>
-      <a class="prototype-lab-link" href="/monitor/?prototype=monitor&amp;variant=A" title="Open the five interactive monitor prototypes and review tools">Prototype lab</a>
+      <a class="prototype-lab-link" href="/monitor/?prototype=monitor&amp;view=preferred" title="Open your preferred prototype or the five interactive monitor directions">Prototype lab</a>
       <button class="help-button" id="help-open" type="button" aria-label="Open setup and help guide" title="Setup and help">?</button>
     </header>
 
@@ -98,6 +98,12 @@
               <label class="session-filter">Session
                 <select id="session-filter" aria-label="Filter inference requests by session">
                   <option value="all">All sessions</option>
+                </select>
+              </label>
+              <label class="session-filter">Date/time
+                <select id="date-sort" aria-label="Sort inference requests by date and time">
+                  <option value="desc" selected>Newest first</option>
+                  <option value="asc">Oldest first</option>
                 </select>
               </label>
               <label><input id="autofollow" type="checkbox" checked /><span>Follow newest</span></label>
@@ -280,6 +286,7 @@
         </footer>
       </div>
     </dialog>
+    <script src="/monitor/date-time-sort.js"></script>
     <script src="/monitor/app.js" defer></script>
     <script type="module" src="/monitor/usage-timeline.js"></script>
     <script type="module" src="/monitor/monitor-ux-prototypes.js"></script>

@@ -9,12 +9,21 @@ import { appendFile, access, mkdir, readFile, unlink } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createCopilotUsageMonitor } from "./copilot-usage.mjs";
+import { createCopilotCapture } from "./copilot-capture.mjs";
+import { createUsageTimelineStore } from "./usage-timeline-store.mjs";
+import { createPrototypeFeedbackStore } from "./prototype-feedback-store.mjs";
+import { createVsCodeInsidersImporter } from "./vscode-insiders-importer.mjs";
+import { captureCounters, captureSnapshot, combineCaptureState, finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
+import { forecastCopilotUsage, summarizeCopilotTokens } from "./copilot-forecast.mjs";
+import { preferredMonitorLocation } from "./monitor-surface-routing.mjs";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, "public");
 const dataDir = process.env.MONITOR_DATA_DIR || path.join(here, "data");
 const trafficLog = path.join(dataDir, "traffic.jsonl");
+const copilotConfig = process.env.COPILOT_CONFIG || path.join(dataDir, "copilot.json");
 const listenHost = process.env.MONITOR_HOST || "127.0.0.1";
 const listenPort = Number(process.env.MONITOR_PORT || 11435);
 const proxyHost = process.env.PROXY_HOST || "";
@@ -49,6 +58,11 @@ async function loadHistory() {
 const subscribers = new Set();
 const requests = new Map();
 const history = await loadHistory();
+const copilotUsage = createCopilotUsageMonitor({ configPath: copilotConfig });
+let copilotCapture;
+let usageTimelineStore;
+let usageTimelineImporter;
+let prototypeFeedbackStore;
 const counters = {
   total: history.length,
   errors: history.filter((item) => item.status === "error").length,
@@ -62,8 +76,11 @@ function queueTrafficFileOperation(operation) {
 }
 
 function refreshCounters() {
-  counters.total = requests.size + history.length;
-  counters.errors = history.filter((item) => item.status === "error").length;
+  const copilot = copilotCapture?.snapshot() || { active: [], history: [] };
+  Object.assign(counters, captureCounters(combineCaptureState(
+    { active: [...requests.values()], history },
+    copilot,
+  )));
 }
 
 function trimHistory() {
@@ -89,39 +106,63 @@ function json(response, status, body) {
 }
 
 function requestSnapshot(item) {
-  return {
-    id: item.id,
-    path: item.path,
-    model: item.model,
-    prompt: item.prompt,
-    messages: item.messages,
-    response: item.response,
-    thinking: item.thinking,
-    client: item.client,
-    clientAddress: item.clientAddress,
-    session: item.session,
-    error: item.error,
-    startedAt: item.startedAt,
-    finishedAt: item.finishedAt,
-    status: item.status,
-    httpStatus: item.httpStatus,
-    metrics: item.metrics,
-  };
+  return captureSnapshot(normalizeCaptureRecord(item));
 }
 
 function initialState() {
+  const copilotTraffic = copilotCapture?.snapshot() || { active: [], history: [] };
+  const traffic = combineCaptureState(
+    { active: [...requests.values()].map(requestSnapshot), history: history.map(requestSnapshot) },
+    { active: copilotTraffic.active.map(requestSnapshot), history: copilotTraffic.history.map(requestSnapshot) },
+  );
   return {
     metrics: latestMetrics,
-    active: [...requests.values()].map(requestSnapshot),
-    history: history.map(requestSnapshot),
+    ...traffic,
     counters: { ...counters },
+    copilot: copilotDashboardState(copilotUsage.snapshot()),
+    usageTimeline: usageTimelineStore?.snapshot() || null,
+  };
+}
+
+function copilotDashboardState(usage) {
+  const traffic = copilotCapture?.snapshot() || { active: [], history: [] };
+  const records = [...traffic.active, ...traffic.history].filter((item) => item.provider === "github-copilot");
+  const authoritativeSpend = usage.status === "ready" ? usage.estimatedCost : null;
+  const forecast = forecastCopilotUsage(records, usage.monthlyBudgetUsd, new Date(), authoritativeSpend, usage.tokenPriceUsdPerMillion);
+  const copilotTokens = summarizeCopilotTokens(records);
+  const ollamaRecords = [...requests.values(), ...history];
+  const fallback = usage.status !== "ready" && forecast.requestCount > 0;
+  const estimatedCost = fallback ? forecast.costUsd : usage.estimatedCost;
+  const usedCredits = fallback ? forecast.credits : usage.usedCredits;
+  const monthlyBudgetUsd = usage.monthlyBudgetUsd;
+  return {
+    ...usage,
+    status: fallback ? "estimated" : usage.status,
+    detail: fallback ? "GitHub billing is unavailable; showing a local token-priced estimate." : usage.detail,
+    estimatedCost,
+    usedCredits,
+    budgetUsedPercent: monthlyBudgetUsd && Number.isFinite(estimatedCost) ? (estimatedCost / monthlyBudgetUsd) * 100 : usage.budgetUsedPercent,
+    budgetRemainingUsd: monthlyBudgetUsd && Number.isFinite(estimatedCost) ? Math.max(0, monthlyBudgetUsd - estimatedCost) : usage.budgetRemainingUsd,
+    usageEstimate: fallback,
+    forecast,
+    observedRequests: records.length,
+    observedInputTokens: copilotTokens.inputTokens,
+    observedOutputTokens: copilotTokens.outputTokens,
+    observedInputTokensEstimated: copilotTokens.estimatedInputRecords > 0,
+    observedOutputTokensEstimated: copilotTokens.estimatedOutputRecords > 0,
+    ollamaInputTokens: ollamaRecords.reduce((sum, item) => sum + (Number(item.metrics?.promptTokens) || 0), 0),
+    ollamaOutputTokens: ollamaRecords.reduce((sum, item) => sum + (Number(item.metrics?.outputTokens) || 0), 0),
   };
 }
 
 function historyState(reason) {
+  const copilotTraffic = copilotCapture?.snapshot() || { active: [], history: [] };
+  const traffic = combineCaptureState(
+    { active: [...requests.values()].map(requestSnapshot), history: history.map(requestSnapshot) },
+    { active: copilotTraffic.active.map(requestSnapshot), history: copilotTraffic.history.map(requestSnapshot) },
+  );
   return {
-    active: [...requests.values()].map(requestSnapshot),
-    history: history.map(requestSnapshot),
+    ...traffic,
     counters: { ...counters },
     reason,
   };
@@ -129,14 +170,43 @@ function historyState(reason) {
 
 async function clearHistory() {
   history.splice(0);
-  refreshCounters();
+  await copilotCapture?.clear();
+  // Timeline Clear is deliberately narrower than Reset: it removes local
+  // recognition text but retains numeric recovered history and source anchors.
+  if (usageTimelineStore) {
+    const timeline = await usageTimelineStore.clearPromptExcerpts();
+    sendEvent("usage-timeline", timeline);
+  }
   await queueTrafficFileOperation(() => unlink(trafficLog).catch((error) => {
     if (error.code !== "ENOENT") throw error;
   }));
+  refreshCounters();
   const state = historyState("cleared");
   sendEvent("history-reset", state);
   return state;
 }
+
+copilotCapture = await createCopilotCapture({
+  dataDir,
+  onChange(type, item) {
+    refreshCounters();
+    if (type === "started") sendEvent("request-started", requestSnapshot(item));
+    else sendEvent("request-finished", requestSnapshot(item));
+    sendEvent("copilot", copilotDashboardState(copilotUsage.snapshot()));
+  },
+});
+usageTimelineStore = await createUsageTimelineStore({ dataDir });
+prototypeFeedbackStore = await createPrototypeFeedbackStore({ dataDir });
+usageTimelineImporter = createVsCodeInsidersImporter({
+  store: usageTimelineStore,
+  onChange({ snapshot }) { sendEvent("usage-timeline", snapshot); },
+});
+// Historical journal recovery can be substantial. The dashboard must become
+// available while it runs; completed imports update it through the event stream.
+void usageTimelineImporter.start().catch((error) => {
+  console.error(`Usage timeline import unavailable: ${error.message}`);
+});
+refreshCounters();
 
 function textContent(value) {
   if (typeof value === "string") return value;
@@ -295,8 +365,7 @@ async function finishRequest(item, parser, error = null) {
     }
   }
 
-  item.finishedAt = new Date().toISOString();
-  item.status = error || item.httpStatus >= 400 ? "error" : "complete";
+  finishCaptureRecord(item, new Date().toISOString(), error || item.httpStatus >= 400 ? "error" : "complete");
   if (error) item.error = `Gateway error: ${error.message}`;
   if (item.status === "error" && !item.error) item.error = fallbackError(item);
   if (item.status === "error" && !item.response.trim()) item.response = `ERROR\n${item.error}`;
@@ -773,16 +842,168 @@ async function serveAsset(response, name, contentType) {
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   if (requestUrl.pathname === "/monitor" || requestUrl.pathname === "/monitor/") {
+    if (!requestUrl.searchParams.has("prototype") && !requestUrl.searchParams.has("surface")) {
+      const preferred = prototypeFeedbackStore.snapshot().preferredView;
+      const location = preferredMonitorLocation(preferred);
+      if (location) {
+        response.writeHead(302, { location, "cache-control": "no-store" });
+        response.end();
+        return;
+      }
+    }
     return serveAsset(response, "index.html", "text/html; charset=utf-8");
   }
   if (requestUrl.pathname === "/monitor/styles.css") {
     return serveAsset(response, "styles.css", "text/css; charset=utf-8");
   }
+  if (requestUrl.pathname === "/monitor/date-time-sort.js") {
+    return serveAsset(response, "date-time-sort.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/monitor-ux-prototypes.css") {
+    return serveAsset(response, "monitor-ux-prototypes.css", "text/css; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/prototype-feedback-lab.css") {
+    return serveAsset(response, "prototype-feedback-lab.css", "text/css; charset=utf-8");
+  }
   if (requestUrl.pathname === "/monitor/app.js") {
     return serveAsset(response, "app.js", "text/javascript; charset=utf-8");
   }
+  if (requestUrl.pathname === "/monitor/monitor-ux-prototypes.js") {
+    return serveAsset(response, "monitor-ux-prototypes.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/prototype-feedback-lab.js") {
+    return serveAsset(response, "prototype-feedback-lab.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline-prototype.js") {
+    return serveAsset(response, "usage-timeline-prototype.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline.js") {
+    return serveAsset(response, "usage-timeline.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline-view-model.mjs") {
+    return serveAsset(response, "../usage-timeline-view-model.mjs", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/usage-timeline-prototype-fixture.js") {
+    return serveAsset(response, "usage-timeline-prototype-fixture.js", "text/javascript; charset=utf-8");
+  }
   if (requestUrl.pathname === "/monitor/api/state") {
     return json(response, 200, initialState());
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline" && request.method === "GET") {
+    return json(response, 200, usageTimelineStore.snapshot());
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback" && request.method === "GET") {
+    return json(response, 200, prototypeFeedbackStore.snapshot());
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/export" && request.method === "GET") {
+    return json(response, 200, prototypeFeedbackStore.exportBundle());
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/profile" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.setReviewer(await readJsonRequest(request));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save reviewer: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/preferred-view" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype preferences are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.setPreferredView(await readJsonRequest(request, 32_768));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save preferred view: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/comment" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const result = await prototypeFeedbackStore.addComment(await readJsonRequest(request, 16_384));
+      sendEvent("prototype-feedback", result.snapshot);
+      return json(response, 200, result);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save comment: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/comment" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.deleteComment(requestUrl.searchParams.get("id"));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not delete comment: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/activity" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const body = await readJsonRequest(request, 131_072);
+      const snapshot = await prototypeFeedbackStore.recordActivity(Array.isArray(body.entries) ? body.entries : []);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not save prototype activity: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback/import" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.importBundle(await readJsonRequest(request, 8_000_000));
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 400, { error: `Could not import review bundle: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/prototype-feedback" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) return json(response, 403, { error: "Prototype review changes are local only" });
+    try {
+      const snapshot = await prototypeFeedbackStore.reset();
+      sendEvent("prototype-feedback", snapshot);
+      return json(response, 200, snapshot);
+    } catch (error) {
+      return json(response, 500, { error: `Could not reset prototype feedback: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline/profile" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) {
+      return json(response, 403, { error: "Timeline changes are only available to the local dashboard" });
+    }
+    try {
+      const body = await readJsonRequest(request);
+      const timeline = await usageTimelineStore.renameUnverifiedProfile(body.label);
+      sendEvent("usage-timeline", timeline);
+      return json(response, 200, timeline);
+    } catch (error) {
+      return json(response, 400, { error: `Could not rename local profile: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline/prompt-excerpts" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {
+      return json(response, 403, { error: "Timeline changes are only available to the local dashboard" });
+    }
+    try {
+      const timeline = await usageTimelineStore.clearPromptExcerpts();
+      sendEvent("usage-timeline", timeline);
+      return json(response, 200, timeline);
+    } catch (error) {
+      return json(response, 500, { error: `Could not clear timeline prompt excerpts: ${error.message}` });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/usage-timeline" && request.method === "DELETE") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {
+      return json(response, 403, { error: "Timeline changes are only available to the local dashboard" });
+    }
+    try {
+      const timeline = await usageTimelineStore.resetUsageHistory();
+      sendEvent("usage-timeline", timeline);
+      return json(response, 200, timeline);
+    } catch (error) {
+      return json(response, 500, { error: `Could not reset usage timeline history: ${error.message}` });
+    }
   }
   if (requestUrl.pathname === "/monitor/api/history" && request.method === "DELETE") {
     if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {
@@ -805,6 +1026,34 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, { enabled: body.enabled, metrics });
     } catch (error) {
       return json(response, 503, { error: error.message });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/copilot-budget" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) {
+      return json(response, 403, { error: "Copilot budget changes are only available to the local dashboard" });
+    }
+    try {
+      const body = await readJsonRequest(request);
+      const usage = await copilotUsage.setBudget(body.monthlyBudgetUsd);
+      const dashboard = copilotDashboardState(usage);
+      sendEvent("copilot", dashboard);
+      return json(response, 200, dashboard);
+    } catch (error) {
+      return json(response, 400, { error: error.message });
+    }
+  }
+  if (requestUrl.pathname === "/monitor/api/copilot-token-price" && request.method === "POST") {
+    if (!isLocalControlRequest(request)) {
+      return json(response, 403, { error: "Copilot token-price changes are only available to the local dashboard" });
+    }
+    try {
+      const body = await readJsonRequest(request);
+      const usage = await copilotUsage.setTokenPrice(body.tokenPriceUsdPerMillion);
+      const dashboard = copilotDashboardState(usage);
+      sendEvent("copilot", dashboard);
+      return json(response, 200, dashboard);
+    } catch (error) {
+      return json(response, 400, { error: error.message });
     }
   }
   if (requestUrl.pathname === "/monitor/events") {
@@ -839,12 +1088,20 @@ async function refreshMetrics() {
   return latestMetrics;
 }
 
+async function refreshCopilotUsage() {
+  const usage = await copilotUsage.refresh();
+  sendEvent("copilot", copilotDashboardState(usage));
+  return usage;
+}
+
 await refreshMetrics();
 console.log(JSON.stringify({
   event: "hardware-topology-detected",
   ...latestMetrics?.system?.hardware,
 }));
 setInterval(() => void refreshMetrics(), 2_000).unref();
+void refreshCopilotUsage();
+setInterval(() => void refreshCopilotUsage(), 5 * 60_000).unref();
 
 server.listen(listenPort, listenHost, () => {
   console.log(`Ollama monitor: http://${listenHost}:${listenPort}/monitor/`);

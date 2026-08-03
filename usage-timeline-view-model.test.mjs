@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { buildUsageTimelineViewModel, displayValue } from "./usage-timeline-view-model.mjs";
+
+const event = (id, usageAt, measurements, family = "gpt") => ({
+  id,
+  timing: { startedAt: usageAt, usageAt },
+  measurements,
+  model: { family },
+});
+
+test("plots measured values at completion and leaves absent measurements out of aggregates", () => {
+  const events = [
+    event("one", "2026-08-01T23:45:00Z", { inputTokens: 10, outputTokens: 5, nativeUnit: { value: 2 } }),
+    event("two", "2026-08-01T23:50:00Z", {}, "claude-sonnet"),
+  ];
+  const view = buildUsageTimelineViewModel(events, { unit: "native", timeZone: "UTC", month: "2026-08" });
+  assert.equal(view.slots.find((slot) => slot.bucket === 47).total, 2);
+  assert.deepEqual(view.measurementCoverage, { totalEvents: 2, measuredEvents: 1, missingEvents: 1 });
+  assert.equal(view.cumulative.at(-1).total, 2);
+  assert.equal(view.ledger.length, 2);
+  assert.equal(displayValue(events[1], "native"), null);
+});
+
+test("uses an explicit selected/reference pair for a locked comparison scale", () => {
+  const events = [
+    event("selected", "2026-08-02T10:00:00Z", { nativeUnit: { value: 3 } }),
+    event("reference", "2026-07-02T10:00:00Z", { nativeUnit: { value: 7 } }),
+    event("unselected", "2026-06-02T10:00:00Z", { nativeUnit: { value: 99 } }),
+  ];
+  const view = buildUsageTimelineViewModel(events, { unit: "native", timeZone: "UTC", month: "2026-08", referenceMonth: "2026-07" });
+  assert.equal(view.referenceMonth, "2026-07");
+  assert.equal(view.referenceTotals.find((value) => value === 7), 7);
+  assert.equal(view.scalePeak, 7);
+});

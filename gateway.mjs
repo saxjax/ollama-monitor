@@ -193,6 +193,7 @@ copilotCapture = await createCopilotCapture({
     if (type === "started") sendEvent("request-started", requestSnapshot(item));
     else sendEvent("request-finished", requestSnapshot(item));
     sendEvent("copilot", copilotDashboardState(copilotUsage.snapshot()));
+    sendEvent("state", initialState());
   },
 });
 usageTimelineStore = await createUsageTimelineStore({ dataDir });
@@ -373,6 +374,7 @@ async function finishRequest(item, parser, error = null) {
   history.unshift(item);
   const trimmed = trimHistory();
   sendEvent("request-finished", requestSnapshot(item));
+  sendEvent("state", initialState());
   if (trimmed) sendEvent("history-reset", historyState("trimmed"));
   await queueTrafficFileOperation(() =>
     appendFile(trafficLog, `${JSON.stringify(requestSnapshot(item))}\n`, { mode: 0o600 })
@@ -436,6 +438,7 @@ async function proxyRequest(clientRequest, clientResponse) {
   requests.set(id, item);
   refreshCounters();
   sendEvent("request-started", requestSnapshot(item));
+  sendEvent("state", initialState());
 
   const headers = { ...clientRequest.headers, host: upstream.host, "content-length": body.length };
   delete headers.connection;

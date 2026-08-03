@@ -1,7 +1,8 @@
 // The approved timeline interface, fed by normalized local history.
 (() => {
   const params = new URLSearchParams(location.search);
-  let variant = params.get('variant')?.toUpperCase() || 'A';
+  const monitorPrototype = params.get('prototype') === 'monitor';
+  let variant = monitorPrototype && params.get('variant')?.toUpperCase() === 'A0' ? 'A' : params.get('variant')?.toUpperCase() || 'A';
   const requestedMonthKey = params.get('month');
   const variants = ['A', 'B'];
   if (!variants.includes(variant)) return;
@@ -134,7 +135,7 @@
       : 'Choose a reference to lock the scale and compare. — means requests were recovered, but this display unit was not measured.';
     return '<section class="proto-month-rail"><div><span>MONTH COMPARISON · ' + (compare ? 'LOCKED Y-SCALE' : 'ADAPTIVE Y-SCALE') + '</span><b>' + selected.label + ' · ' + monthAmount(selected) + '</b></div><div class="proto-month-points">' + points + '</div><div class="proto-compare-reference"><span>REFERENCE MONTH</span>' + references + '<small>' + referenceNote + '</small></div></section>';
   };
-  const sharedHeader = (key, title, copy) => `<header class="proto-head"><div><span class="index">USAGE TIMELINE · VS CODE INSIDERS · ${key === 'B' ? 'MONTH PULSE' : 'SPIKE LENS'}</span><h2>${title}</h2><p>${sessions.length.toLocaleString()} normalized local requests · ${dates.length} calendar days · ${months[monthIndex].label} · ${fixture?.profileLabel || 'unverified local profile'}. ${copy}${unit === 'dollars' ? ` ${fixture?.moneyNotice || ''}` : ''}</p></div><div>${selector()}</div></header>`;
+  const sharedHeader = (key, title, copy) => `<header class="proto-head"><div><span class="index">USAGE TIMELINE · VS CODE INSIDERS · ${key === 'B' ? 'MONTH PULSE' : 'SPIKE LENS'}</span><h2>${title}</h2><p>${sessions.length.toLocaleString()} normalized local requests · ${dates.length} calendar days · ${months[monthIndex].label} · ${fixture?.profileLabel || 'unverified local profile'}. ${copy}${unit === 'credits' ? ` ${fixture?.creditNotice || 'Source: local VS Code–displayed client credits, not the GitHub billing total.'}` : ''}${unit === 'dollars' ? ` ${fixture?.moneyNotice || ''}` : ''}</p></div><div>${selector()}</div></header>`;
   const navigator = () => {
     const data = measure();
     const peak = compare ? sharedCumulativePeak() : (data.total || 1);
@@ -345,7 +346,7 @@
     host.querySelectorAll('[data-variant]').forEach((button) => button.addEventListener('click', () => {
       const nextVariant = button.dataset.variant;
       if (!nextVariant || nextVariant === variant) return;
-      params.set('variant', nextVariant);
+      if (!monitorPrototype) params.set('variant', nextVariant);
       history.replaceState(null, '', `${location.pathname}?${params}`);
       variant = nextVariant;
       host.querySelector('.proto-graph-flip')?.classList.toggle('is-detail', variant === 'B');

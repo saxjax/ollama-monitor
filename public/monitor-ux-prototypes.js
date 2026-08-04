@@ -285,11 +285,26 @@ function buildView(events, month, unit, anomalyMode = "value", threshold = 0) {
     id: `${day}:${bucket}`, day, bucket, total: 0, events: [], byOrigin: {}, concurrent: 0, missing: 0,
   })));
   const slotMap = new Map(slots.map((slot) => [slot.id, slot]));
+  const slotSessions = new Map();
+  const originTotals = new Map();
+  const sessions = new Set();
+  let measured = 0;
+  let total = 0;
+
   for (const event of monthEvents) {
     const value = unitValue(event, unit);
+    const measuredValue = event[unit];
     const day = dayMap.get(event.day);
     const slot = slotMap.get(`${event.day}:${event.bucket}`);
     if (!day || !slot) continue;
+
+    sessions.add(event.sessionId);
+    originTotals.set(event.origin, (originTotals.get(event.origin) || 0) + value);
+    if (Number.isFinite(measuredValue)) {
+      measured += 1;
+      total += measuredValue;
+    }
+
     day.events.push(event);
     if (!Number.isFinite(event[unit])) day.missing += 1;
     day.total += value;
@@ -298,41 +313,51 @@ function buildView(events, month, unit, anomalyMode = "value", threshold = 0) {
     if (!Number.isFinite(event[unit])) slot.missing += 1;
     slot.total += value;
     slot.byOrigin[event.origin] = (slot.byOrigin[event.origin] || 0) + value;
+
+    const startBucket = Math.max(0, Math.min(47, Math.floor((event.minute || 0) / 30)));
+    const endBucket = Math.max(
+      startBucket + 1,
+      Math.min(48, Math.ceil(((event.minute || 0) + Math.max(1, event.durationMinutes || 0)) / 30)),
+    );
+    for (let bucket = startBucket; bucket < endBucket; bucket += 1) {
+      const slotId = `${event.day}:${bucket}`;
+      if (!slotMap.has(slotId)) continue;
+      let activeSessions = slotSessions.get(slotId);
+      if (!activeSessions) {
+        activeSessions = new Set();
+        slotSessions.set(slotId, activeSessions);
+      }
+      activeSessions.add(event.sessionId);
+    }
   }
+
   for (const slot of slots) {
-    const start = slot.bucket * 30;
-    const end = start + 30;
-    slot.concurrent = new Set(monthEvents
-      .filter((event) => event.day === slot.day && event.minute < end && event.minute + event.durationMinutes > start)
-      .map((event) => event.sessionId)).size;
+    slot.concurrent = slotSessions.get(slot.id)?.size || 0;
   }
+
   const daily = [...dayMap.values()];
-  const measuredEvents = monthEvents.filter((event) => Number.isFinite(event[unit]));
-  const total = measuredEvents.reduce((sum, event) => sum + event[unit], 0);
   const peakDay = daily.reduce((peak, day) => day.total > peak.total ? day : peak, daily[0] || { total: 0, events: [] });
   const peakSlot = slots.reduce((peak, slot) => slot.total > peak.total ? slot : peak, slots[0] || { total: 0, events: [] });
   const nonZero = slots.map((slot) => slot.total).filter(Boolean).sort((a, b) => a - b);
   const occupiedMedian = nonZero[Math.floor(nonZero.length / 2)] || 1;
   const bucketBaselines = Array.from({ length: 48 }, (_, bucket) => median(slots.filter((slot) => slot.bucket === bucket && slot.total > 0).map((slot) => slot.total)) || occupiedMedian);
-  const ranked = slots.filter((slot) => slot.total > 0 && slot.total >= threshold).map((slot) => {
-    const index = slots.indexOf(slot);
+  const ranked = slots.flatMap((slot, index) => {
+    if (!(slot.total > 0 && slot.total >= threshold)) return [];
     const previous = slots[index - 1]?.total || 0;
     const multiple = slot.total / Math.max(1, bucketBaselines[slot.bucket]);
     const jump = Math.max(0, slot.total - previous);
     const jumpPercent = (slot.total - previous) / Math.max(1, previous) * 100;
     const score = anomalyMode === "jump" ? jumpPercent : anomalyMode === "unusual" ? multiple : slot.total;
-    return { ...slot, multiple, jump, jumpPercent, score };
+    return [{ ...slot, multiple, jump, jumpPercent, score }];
   }).sort((left, right) => right.score - left.score);
   const topSlots = ranked.slice(0, 12).map((slot, rank) => ({ ...slot, rank: rank + 1 }));
   let running = 0;
   const cumulative = slots.map((slot) => (running += slot.total));
-  const origins = [...new Set(monthEvents.map((event) => event.origin))];
-  const originTotals = origins.map((origin) => ({
+  const originTotalsList = [...originTotals.keys()].map((origin) => ({
     origin,
-    total: monthEvents.filter((event) => event.origin === origin).reduce((sum, event) => sum + unitValue(event, unit), 0),
+    total: originTotals.get(origin) || 0,
   })).sort((left, right) => right.total - left.total);
-  const sessions = [...new Set(monthEvents.map((event) => event.sessionId))];
-  return { monthEvents, days, daily, slots, total, peakDay, peakSlot, topSlots, cumulative, originTotals, measured: measuredEvents.length, missing: monthEvents.length - measuredEvents.length, median: occupiedMedian, sessions };
+  return { monthEvents, days, daily, slots, total, peakDay, peakSlot, topSlots, cumulative, originTotals: originTotalsList, measured, missing: monthEvents.length - measured, median: occupiedMedian, sessions: [...sessions] };
 }
 
 function systemView(state) {
@@ -1461,31 +1486,34 @@ async function startMonitorPrototype() {
   const root = document.createElement("div");
   root.id = "monitor-ux-prototype-root";
   document.body.prepend(root);
+  root.className = "monitor-ux-root is-loading";
+  root.innerHTML = `<section class="mux-loading" role="status" aria-live="polite"><h1>Opening monitor</h1><p data-loading-stage>Starting local monitor surface...</p><small data-loading-detail>Loading local timeline, live state, and preferences.</small></section>`;
 
-  // A0 is the real monitor, not a reconstruction. Keep the production nodes
-  // alive while other throwaway variants are open so app.js and the timeline
-  // renderer retain their event listeners and live state.
-  const classicParking = document.createElement("div");
-  classicParking.id = "monitor-classic-parking";
-  classicParking.hidden = true;
-  document.body.appendChild(classicParking);
-  const classicNodes = [
+  const setLoadingStage = (stage, detail = "") => {
+    root.querySelector("[data-loading-stage]").textContent = stage;
+    root.querySelector("[data-loading-detail]").textContent = detail;
+  };
+
+  // Prototype mode owns rendering and data flow. Remove the classic shell to
+  // prevent duplicated surfaces and event work from accumulating in memory.
+  [
     document.querySelector("body > .grain"),
     document.querySelector("body > .masthead"),
     document.querySelector("body > main"),
-  ].filter(Boolean);
-  const parkClassic = () => classicNodes.forEach((node) => classicParking.appendChild(node));
-  const mountClassic = (host) => classicNodes.forEach((node) => host.appendChild(node));
-  parkClassic();
+  ].filter(Boolean).forEach((node) => node.remove());
 
+  setLoadingStage("Contacting local monitor APIs...", "Reading usage timeline and live state from this Mac.");
   const [timelineResponse, stateResponse, feedbackResponse] = await Promise.all([
     fetch("/monitor/api/usage-timeline", { cache: "no-store" }),
     fetch("/monitor/api/state", { cache: "no-store" }),
     fetch("/monitor/api/prototype-feedback", { cache: "no-store" }),
   ]);
+  setLoadingStage("Decoding local records...", "Large local history can take longer to decode.");
   const timeline = await timelineResponse.json();
   let feedbackSnapshot = await feedbackResponse.json();
   let liveState = await stateResponse.json();
+  const eventCount = Array.isArray(timeline?.usageEvents) ? timeline.usageEvents.length : 0;
+  setLoadingStage("Preparing timeline model...", `${eventCount.toLocaleString()} usage records found locally.`);
   let events = normalizeEvents(timeline);
   const liveEvents = new Map();
   const mergeLiveEvents = () => {
@@ -1618,16 +1646,16 @@ async function startMonitorPrototype() {
     } : null;
     const current = model();
     syncUrl();
-    const views = { B: VariantB, C: VariantC, E: VariantE, I: VariantI };
-    parkClassic();
-    root.className = `monitor-ux-root reading-${prototypeDetailLevel} ${customMode ? "variant-custom" : variant === "A0" ? "variant-a0-native" : `variant-${variant.toLowerCase()}`}`;
-    const browserLabEntry = labEnabled ? "" : `<a class="mux-lab-entry" href="/monitor/?prototype=monitor&view=preferred">Prototype lab</a>`;
+    const views = { A0: VariantA0, B: VariantB, C: VariantC, E: VariantE, I: VariantI };
+    root.className = `monitor-ux-root reading-${prototypeDetailLevel} ${customMode ? "variant-custom" : `variant-${variant.toLowerCase()}`}`;
+    const browserLabEntry = labEnabled
+      ? ""
+      : `<a class="mux-lab-entry" href="/monitor/">Classic monitor</a>`;
     const readingDetailControl = detailToggle();
+    const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
     if (!customMode && variant === "A0") {
-      root.innerHTML = `<div class="mux-classic-host" data-feedback-id="classic-monitor" data-feedback-kind="prototype" data-feedback-label="Complete Classic monitor"></div>${browserLabEntry}${readingDetailControl}`;
-      mountClassic(root.querySelector(".mux-classic-host"));
+      root.innerHTML = `${view}${browserLabEntry}${readingDetailControl}`;
     } else {
-      const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
       root.innerHTML = `${view}${browserLabEntry}${readingDetailControl}`;
     }
     let replacementPaper = null;
@@ -2039,17 +2067,14 @@ async function startMonitorPrototype() {
   render();
 }
 
-// Top-level await keeps the page's load lifecycle open until the real local
-// timeline has painted. It also makes screenshots and the native WebView show a
-// complete first frame instead of a black async-loading gap.
 if (prototypeEnabled) {
-  try {
-    await startMonitorPrototype();
-  } catch (error) {
-    document.documentElement.classList.add("monitor-ux-prototype-active");
-    const root = document.querySelector("#monitor-ux-prototype-root") || document.body.appendChild(document.createElement("div"));
-    root.id = "monitor-ux-prototype-root";
-    root.style.cssText = "display:block;padding:40px;color:#f5d8cf;background:#1b1110;font:16px/1.5 ui-monospace,monospace;min-height:100vh";
-    root.innerHTML = `<h1>Prototype failed to render</h1><pre>${escapeHtml(error?.stack || error)}</pre>`;
-  }
+  queueMicrotask(() => {
+    startMonitorPrototype().catch((error) => {
+      document.documentElement.classList.add("monitor-ux-prototype-active");
+      const root = document.querySelector("#monitor-ux-prototype-root") || document.body.appendChild(document.createElement("div"));
+      root.id = "monitor-ux-prototype-root";
+      root.style.cssText = "display:block;padding:40px;color:#f5d8cf;background:#1b1110;font:16px/1.5 ui-monospace,monospace;min-height:100vh";
+      root.innerHTML = `<h1>Prototype failed to render</h1><pre>${escapeHtml(error?.stack || error)}</pre>`;
+    });
+  });
 }

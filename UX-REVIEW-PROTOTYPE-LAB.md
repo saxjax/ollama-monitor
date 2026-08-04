@@ -64,3 +64,22 @@ into permanent dashboard clutter?
    the preferred monitor as separate surfaces. Saving now enters the preferred
    style immediately, without the LAB dock; MONITOR follows the preference,
    LAB restores evaluation controls, and Classic remains an explicit menu item.
+
+## Legibility and information hierarchy pass
+
+The prototype family now shares an explicit reading contract:
+
+- 12px is the absolute floor for annotations, units, evidence state, chart text,
+  and metadata; interactive controls use at least 13px and explanatory prose
+  uses 14px.
+- Exact values, units, operational status, evidence identity, and action labels
+  always remain visible. They are never treated as secondary decoration.
+- Every monitor direction, including the live Classic/A0 mount and mixed views,
+  exposes a persistent **Reading detail** control. **Essential** removes only
+  optional orientation, methodology, and scoring explanations; **Full** restores
+  them. The choice is local to the browser, and compact screens start in
+  Essential mode until the user chooses otherwise.
+- Review and composition controls follow the same legibility floor so the LAB
+  never asks reviewers to evaluate readable UI through unreadable tooling.
+- Keyboard focus is made deliberately visible with a three-pixel outline across
+  prototypes and LAB controls.

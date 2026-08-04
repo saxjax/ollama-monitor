@@ -20,6 +20,22 @@ const VARIANTS = {
 };
 
 const VISUAL_VARIANTS = ["A0", "A", "B", "C", "D", "E", "F", "H", "I"];
+const PROTOTYPE_DETAIL_KEY = "saxjax.prototype-detail-level.v1";
+
+function initialDetailLevel() {
+  try {
+    const saved = localStorage.getItem(PROTOTYPE_DETAIL_KEY);
+    if (saved === "essential" || saved === "full") return saved;
+  } catch {}
+  return matchMedia("(max-width: 760px)").matches ? "essential" : "full";
+}
+
+let prototypeDetailLevel = initialDetailLevel();
+
+function detailToggle() {
+  const full = prototypeDetailLevel === "full";
+  return `<button class="mux-detail-toggle" data-action="detail-level" aria-pressed="${full}" title="${full ? "Hide" : "Show"} optional explanations"><i aria-hidden="true"></i><span>Reading detail</span><b>${full ? "Full" : "Essential"}</b></button>`;
+}
 
 const FAMILY_COLORS = {
   claude: "#e7654b",
@@ -1658,14 +1674,15 @@ async function startMonitorPrototype() {
     syncUrl();
     const views = { A: VariantA, B: VariantB, C: VariantC, D: VariantD, E: VariantE, F: VariantF, H: VariantH, I: VariantI };
     parkClassic();
-    root.className = `monitor-ux-root ${customMode ? "variant-custom" : variant === "A0" ? "variant-a0-native" : `variant-${variant.toLowerCase()}`}`;
+    root.className = `monitor-ux-root reading-${prototypeDetailLevel} ${customMode ? "variant-custom" : variant === "A0" ? "variant-a0-native" : `variant-${variant.toLowerCase()}`}`;
     const browserLabEntry = labEnabled ? "" : `<a class="mux-lab-entry" href="/monitor/?prototype=monitor&view=preferred">Prototype lab</a>`;
+    const readingDetailControl = detailToggle();
     if (!customMode && variant === "A0") {
-      root.innerHTML = `<div class="mux-classic-host" data-feedback-id="classic-monitor" data-feedback-kind="prototype" data-feedback-label="Complete Classic monitor"></div>${browserLabEntry}`;
+      root.innerHTML = `<div class="mux-classic-host" data-feedback-id="classic-monitor" data-feedback-kind="prototype" data-feedback-label="Complete Classic monitor"></div>${browserLabEntry}${readingDetailControl}`;
       mountClassic(root.querySelector(".mux-classic-host"));
     } else {
       const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
-      root.innerHTML = `${view}${browserLabEntry}`;
+      root.innerHTML = `${view}${browserLabEntry}${readingDetailControl}`;
     }
     let replacementPaper = null;
     if (evidenceSnapshot) {
@@ -1851,6 +1868,11 @@ async function startMonitorPrototype() {
       if (details.open) void hydrateEvidencePaper(details);
     });
     root.querySelectorAll('[data-action="controls-toggle"]').forEach((button) => button.addEventListener("click", () => { controlsOpen = !controlsOpen; render(); }));
+    root.querySelectorAll('[data-action="detail-level"]').forEach((button) => button.addEventListener("click", () => {
+      prototypeDetailLevel = prototypeDetailLevel === "full" ? "essential" : "full";
+      try { localStorage.setItem(PROTOTYPE_DETAIL_KEY, prototypeDetailLevel); } catch {}
+      render();
+    }));
     root.querySelectorAll('[data-action="unit"]').forEach((button) => button.addEventListener("click", () => { unit = button.dataset.unit; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="month"]').forEach((select) => select.addEventListener("change", () => { month = select.value; if (referenceMonth === month) referenceMonth = null; selectedDay = null; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; zoom = "month"; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="view-month"]').forEach((button) => button.addEventListener("click", () => { month = button.dataset.month; if (referenceMonth === month) referenceMonth = null; selectedDay = null; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; zoom = "month"; syncUrl(); render(); }));

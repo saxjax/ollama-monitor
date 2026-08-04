@@ -187,12 +187,12 @@ app. Browser users get a **Prototype lab** link in the dashboard; that redundant
 link is hidden inside the native app. You can also open:
 
 ```text
-http://127.0.0.1:11435/monitor/?prototype=monitor&variant=A
+http://127.0.0.1:11435/monitor/?prototype=monitor&variant=B
 ```
 
-All eight experimental monitor directions use the same local usage and system data and expose
+All five monitor directions use the same local usage and system data and expose
 the same filters, units, time navigation, evidence, session lanes, and Ollama
-power control. F, H, and I add prototype-only provider checkpoints, a monthly
+power control. Run the month adds prototype-only provider checkpoints, a monthly
 budget made from a base allowance plus dated mid-month increases, explicit
 month-end forecasting, and a finish rating centred on the original budget.
 Overuse and underuse are penalized symmetrically; approved increases appear as
@@ -201,7 +201,7 @@ checkpoints and budget increases remain in memory and disappear when the page cl
 floating review tools add four workflows:
 
 Date-based rows default to **Newest first**. The **Table date/time** control
-switches request evidence, session lanes, spike ledgers, day contact sheets, and
+switches request evidence, session lanes, spike ledgers, and
 review comments together between newest-first and oldest-first. Timeline graph
 axes remain chronological from left to right. The Classic monitor's request wire
 uses the same setting.
@@ -215,7 +215,7 @@ uses the same setting.
 - **Export** creates a portable JSON review bundle. Colleagues can send their
   bundles back; import all of them on one Mac to merge the evidence without
   double-counting repeated imports.
-- **Default view** adopts the current A–I prototype, returns to the classic
+- **Default view** adopts the current prototype, returns to the classic
   monitor, or opens a composition studio. Mixed views choose, order, and retain
   live sections from different prototypes and can become the native app's
   startup surface. Adopting a prototype immediately opens that visual design as

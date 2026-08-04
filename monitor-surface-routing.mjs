@@ -1,7 +1,17 @@
 export function preferredMonitorLocation(preferredView) {
-  if (!preferredView || !["variant", "custom"].includes(preferredView.mode)) return null;
-  const parameters = new URLSearchParams({ prototype: "monitor", surface: "default" });
+  if (!preferredView || !["variant", "custom"].includes(preferredView.mode))
+    return null;
+  const parameters = new URLSearchParams({
+    prototype: "monitor",
+    surface: "default",
+  });
   if (preferredView.mode === "custom") parameters.set("layout", "custom");
-  else parameters.set("variant", preferredView.variant || "A");
+  else
+    parameters.set(
+      "variant",
+      ["A0", "I", "B", "C", "E"].includes(preferredView.variant)
+        ? preferredView.variant
+        : "I",
+    );
   return `/monitor/?${parameters}`;
 }

@@ -1,6 +1,6 @@
 # Prototype Lab UX review — default and mixed views
 
-Question: how can a reviewer move from evaluating A–E to adopting one prototype,
+Question: how can a reviewer move from evaluating the retained directions to adopting one prototype,
 or a deliberate mixture of their sections, without turning the research controls
 into permanent dashboard clutter?
 
@@ -31,9 +31,9 @@ into permanent dashboard clutter?
 - Consolidate adoption and composition under one **Default view** control.
 - Persist a local-only preferred view with three modes: classic, variant, custom.
 - Add **Use as default** to each comparison candidate.
-- Add a composition studio with ordered section rows, A–E source choices, and
+- Add a composition studio with ordered section rows, retained source choices, and
   required usage/evidence/system sections.
-- Render the custom view from the same live model and action bindings as A–E.
+- Render the custom view from the same live model and action bindings as the retained directions.
 - Redirect a plain `/monitor/` launch to the preference while preserving an
   explicit `?surface=classic` escape.
 - Keep preference data out of exported review bundles.

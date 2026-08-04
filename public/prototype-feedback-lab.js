@@ -10,6 +10,7 @@ const SENTIMENTS = {
 };
 
 const SECTION_LIBRARY = {
+  throughput: { label: "Throughput", description: "Active, total, and error counts with gateway and host facts.", required: true },
   timeline: { label: "Usage timeline", description: "The primary explosion-finding instrument.", required: true },
   spikes: { label: "Spike ranking", description: "A short route into the most expensive intervals." },
   evidence: { label: "Prompt and request evidence", description: "The sessions and prompts behind a selected interval.", required: true },
@@ -21,6 +22,7 @@ const SECTION_LIBRARY = {
 };
 
 const SECTION_FLAVOURS = {
+  A0: "The actual dark observatory: readouts, dials, core rack, usage timeline, and wire",
   A: "Calm editorial overview",
   B: "Cost-first seismograph",
   C: "Dense machine-room instrument",
@@ -28,21 +30,43 @@ const SECTION_FLAVOURS = {
   E: "Auditable incident ledger",
 };
 
+const SOURCE_VARIANTS = ["A0", "A", "B", "C", "D", "E"];
+
 const DEFAULT_LAYOUT = {
   shellVariant: "A",
   sections: [
-    ["timeline", "A"], ["spikes", "B"], ["evidence", "E"], ["system", "C"],
+    ["throughput", "A"], ["timeline", "A"], ["spikes", "B"], ["evidence", "E"], ["system", "C"],
     ["sessions", "A"], ["resources", "C"], ["accumulated", "B"], ["provider-evidence", "E"],
   ].map(([id, sourceVariant]) => ({ id, sourceVariant, enabled: true })),
 };
 
+function normalizeLayout(layout) {
+  const source = layout && typeof layout === "object" ? layout : DEFAULT_LAYOUT;
+  const sections = Array.isArray(source.sections) ? structuredClone(source.sections) : structuredClone(DEFAULT_LAYOUT.sections);
+  if (!sections.some((section) => section.id === "throughput")) {
+    sections.unshift({ id: "throughput", sourceVariant: "A", enabled: true });
+  } else sections.find((section) => section.id === "throughput").enabled = true;
+  return { shellVariant: SOURCE_VARIANTS.includes(source.shellVariant) ? source.shellVariant : "A", sections };
+}
+
 const SECTION_TARGETS = [
-  [".mux-head, .mux-c-head, .mux-e-head", "header", "Header, period, and total"],
+  [".mux-classic-host > .masthead", "classic-header", "Classic machine identity and Ollama controls"],
+  [".mux-classic-host .telemetry-readouts", "classic-readouts", "Classic resident model, CPU demand, and Ollama RAM readouts"],
+  [".mux-classic-host .telemetry-dials", "classic-dials", "Classic CPU, memory, swap, and budget dials"],
+  [".mux-classic-host .core-observatory", "classic-core-scheduler", "Classic hardware scheduler and core activity rack"],
+  [".mux-classic-host .timeline-prototype", "usage-timeline", "Classic usage timeline and month comparison"],
+  [".mux-classic-host .stream-panel", "request-evidence", "Classic AI communication wire"],
+  [".mux-classic-host .side-panel", "classic-throughput-budget", "Classic throughput, budget, velocity, and token price panel"],
+  [".mux-throughput", "throughput", "Throughput and live request counts"],
+  [".mux-head, .mux-c-head, .mux-e-head, .mux-f-head, .mux-h-head, .mux-i-head", "header", "Header, period, and total"],
   [".mux-controls, .mux-c-controls, .mux-e-toolbar", "controls", "Filters and inspection controls"],
   [".mux-system-strip, .mux-c-machine, .mux-e-machine", "system-state", "Live system state"],
-  [".mux-a-chart, .mux-b-scope, .mux-c-usage, .mux-d-film, .mux-e-horizon", "usage-timeline", "Usage-over-time visualization"],
+  [".mux-a0-timeline, .mux-a-chart, .mux-b-scope, .mux-c-usage, .mux-d-film, .mux-e-horizon, .mux-f-garden, .mux-h-fabric, .mux-i-game", "usage-timeline", "Usage-over-time visualization"],
   [".mux-a-index, .mux-b-quakes, .mux-e-ranking", "spike-ranking", "Spike and anomaly ranking"],
-  [".mux-evidence, .mux-b-proof, .mux-d-report, .mux-e-selected", "request-evidence", "Prompt and request evidence"],
+  [".mux-evidence, .mux-b-proof, .mux-d-report, .mux-e-selected, .mux-f-roots, .mux-h-proof, .mux-i-evidence", "request-evidence", "Prompt and request evidence"],
+  [".mux-manual", "manual-github-readings", "Manual GitHub credit checkpoints"],
+  [".mux-course", "course-control", "Credit target and future pace simulator"],
+  [".mux-prompt-coach", "prompt-coach", "Automatic prompt-practice guidance"],
   [".mux-history", "accumulated-usage", "Accumulated usage navigator"],
   [".mux-resources", "resource-correlation", "Usage and resource correlation"],
   [".mux-sessions", "session-lanes", "Parallel session lanes"],
@@ -124,7 +148,7 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
   let composerTarget = null;
   let defaultMenuOpen = false;
   let studioOpen = false;
-  let draftLayout = structuredClone(state.preferredView?.layout || DEFAULT_LAYOUT);
+  let draftLayout = normalizeLayout(state.preferredView?.layout);
   let status = "";
   let lastActiveAt = performance.now();
   let lastActivityAt = performance.now();
@@ -369,7 +393,7 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
       headers: { "content-type": "application/json" },
       body: JSON.stringify(preferred),
     });
-    draftLayout = structuredClone(state.preferredView.layout);
+    draftLayout = normalizeLayout(state.preferredView.layout);
     status = `${preferredSummary()} is now the startup view`;
     defaultMenuOpen = false;
     studioOpen = false;
@@ -392,7 +416,7 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
       <p>Choose what opens from Spotlight, the Dock, and a plain monitor URL. This stays on this Mac and is not included in review exports.</p>
       <div class="pfl-default-options">
         ${context.custom ? `<button data-lab-action="use-custom"><b>Use this mixed view</b><small>Keep the current section recipe as your default.</small></button>` : `<button data-lab-action="use-variant" data-variant="${currentVariant}"><b>Use ${currentVariant} · ${escapeHtml(variants[currentVariant])}</b><small>Open this complete prototype by default.</small></button>`}
-        <button data-lab-action="open-studio"><b>Build a mixed view</b><small>Choose and order sections from A–E.</small></button>
+        <button data-lab-action="open-studio"><b>Build a mixed view</b><small>Choose and order sections from A0–E.</small></button>
         <button data-lab-action="use-classic"><b>Use the classic monitor</b><small>Return startup to the existing production dashboard.</small></button>
       </div>
       <footer><span>Current default</span><strong>${escapeHtml(preferredSummary())}</strong>${status ? `<small>${escapeHtml(status)}</small>` : ""}</footer>
@@ -404,10 +428,10 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
     const sections = draftLayout.sections || DEFAULT_LAYOUT.sections;
     return `<section class="pfl-studio" aria-label="Build a mixed monitor view">
       <header><div><span>MY MONITOR / COMPOSITION STUDIO</span><h1>Take the useful parts with you.</h1><p>Choose the character of the outer frame, then decide which prototype supplies each instrument. The usage timeline, evidence, and system state stay required so the result remains a working monitor.</p></div><button data-lab-action="close-studio">Cancel</button></header>
-      <div class="pfl-shell-picker"><div><span>OUTER FRAME</span><h2>Which world should hold the pieces?</h2></div>${Object.entries(variants).map(([key, label]) => `<button data-lab-action="studio-shell" data-variant="${key}" class="${draftLayout.shellVariant === key ? "is-active" : ""}" aria-pressed="${draftLayout.shellVariant === key}"><b>${key}</b><span>${escapeHtml(label)}</span></button>`).join("")}</div>
+      <div class="pfl-shell-picker"><div><span>OUTER FRAME</span><h2>Which world should hold the pieces?</h2></div>${SOURCE_VARIANTS.map((key) => `<button data-lab-action="studio-shell" data-variant="${key}" class="${draftLayout.shellVariant === key ? "is-active" : ""}" aria-pressed="${draftLayout.shellVariant === key}"><b>${key}</b><span>${escapeHtml(variants[key])}</span></button>`).join("")}</div>
       <main class="pfl-section-builder"><header><span>ORDER</span><span>SECTION</span><span>SOURCE PROTOTYPE</span><span>IN VIEW</span></header>${sections.map((section, index) => {
         const definition = SECTION_LIBRARY[section.id];
-        return `<article data-section-row="${section.id}" class="${section.enabled ? "" : "is-disabled"}"><div class="pfl-order"><b>${String(index + 1).padStart(2, "0")}</b><button data-lab-action="move-section" data-section="${section.id}" data-direction="-1" aria-label="Move ${escapeHtml(definition.label)} earlier" ${index === 0 ? "disabled" : ""}>↑</button><button data-lab-action="move-section" data-section="${section.id}" data-direction="1" aria-label="Move ${escapeHtml(definition.label)} later" ${index === sections.length - 1 ? "disabled" : ""}>↓</button></div><div><h3>${escapeHtml(definition.label)}</h3><p>${escapeHtml(definition.description)}</p>${definition.required ? "<small>REQUIRED</small>" : ""}</div><label><select data-lab-action="section-source" data-section="${section.id}" aria-label="Source prototype for ${escapeHtml(definition.label)}">${Object.entries(variants).map(([key, label]) => `<option value="${key}" ${section.sourceVariant === key ? "selected" : ""}>${key} · ${escapeHtml(label)} — ${escapeHtml(SECTION_FLAVOURS[key])}</option>`).join("")}</select></label><label class="pfl-include"><input data-lab-action="section-enabled" data-section="${section.id}" type="checkbox" aria-label="Show ${escapeHtml(definition.label)}" ${section.enabled ? "checked" : ""} ${definition.required ? "disabled" : ""}><i></i><span>${section.enabled ? "Shown" : "Hidden"}</span></label></article>`;
+        return `<article data-section-row="${section.id}" class="${section.enabled ? "" : "is-disabled"}"><div class="pfl-order"><b>${String(index + 1).padStart(2, "0")}</b><button data-lab-action="move-section" data-section="${section.id}" data-direction="-1" aria-label="Move ${escapeHtml(definition.label)} earlier" ${index === 0 ? "disabled" : ""}>↑</button><button data-lab-action="move-section" data-section="${section.id}" data-direction="1" aria-label="Move ${escapeHtml(definition.label)} later" ${index === sections.length - 1 ? "disabled" : ""}>↓</button></div><div><h3>${escapeHtml(definition.label)}</h3><p>${escapeHtml(definition.description)}</p>${definition.required ? "<small>REQUIRED</small>" : ""}</div><label><select data-lab-action="section-source" data-section="${section.id}" aria-label="Source prototype for ${escapeHtml(definition.label)}">${SOURCE_VARIANTS.map((key) => `<option value="${key}" ${section.sourceVariant === key ? "selected" : ""}>${key} · ${escapeHtml(variants[key])} — ${escapeHtml(SECTION_FLAVOURS[key])}</option>`).join("")}</select></label><label class="pfl-include"><input data-lab-action="section-enabled" data-section="${section.id}" type="checkbox" aria-label="Show ${escapeHtml(definition.label)}" ${section.enabled ? "checked" : ""} ${definition.required ? "disabled" : ""}><i></i><span>${section.enabled ? "Shown" : "Hidden"}</span></label></article>`;
       }).join("")}</main>
       <footer><button data-lab-action="restore-layout">Restore useful mix</button><div><span>${sections.filter((item) => item.enabled).length} sections · shell ${draftLayout.shellVariant}</span><button data-lab-action="save-layout">Save and use this view</button></div></footer>
     </section>`;
@@ -438,7 +462,7 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
     const context = getContext();
     const custom = context.custom === true;
     const navigation = custom
-      ? `<button data-lab-action="browse-variants" class="pfl-nav-button" aria-label="Browse prototype variants">A–E</button><div class="pfl-dock-current"><small>MY MIXED VIEW</small><strong>${state.preferredView?.layout?.sections?.filter((item) => item.enabled !== false).length || 0} sections</strong></div><button data-lab-action="open-studio" class="pfl-nav-button" aria-label="Edit mixed layout">✦</button>`
+      ? `<button data-lab-action="browse-variants" class="pfl-nav-button" aria-label="Browse prototype variants">A0–I</button><div class="pfl-dock-current"><small>MY MIXED VIEW</small><strong>${state.preferredView?.layout?.sections?.filter((item) => item.enabled !== false).length || 0} sections</strong></div><button data-lab-action="open-studio" class="pfl-nav-button" aria-label="Edit mixed layout">✦</button>`
       : `<button data-lab-action="previous-variant" class="pfl-nav-button" aria-label="Previous prototype">←</button><div class="pfl-dock-current"><small>PROTOTYPE ${currentVariant}</small><strong>${escapeHtml(variants[currentVariant] || "Monitor direction")}</strong></div><button data-lab-action="next-variant" class="pfl-nav-button" aria-label="Next prototype">→</button>`;
     return `<nav class="pfl-toolbar" aria-label="Movable prototype lab dock"><button data-lab-action="drag-dock" class="pfl-dock-grip" aria-label="Move prototype lab dock. Double-click or press Home to reset." title="Drag to move · double-click to reset">⠿</button><div class="pfl-dock-navigation">${navigation}</div><div class="pfl-dock-actions"><button data-lab-action="toggle-review" class="${reviewMode ? "is-active" : ""}"><i class="pfl-comment-dot"></i>${reviewMode ? "Pick a section" : "Comment"}</button><button data-lab-action="compare">Compare <b class="pfl-count">${state.comments.length}</b></button><button data-lab-action="export">Export</button><button data-lab-action="default-menu" class="pfl-default-trigger"><span>Default</span><b>${escapeHtml(preferredSummary())}</b></button></div></nav>`;
   }
@@ -513,7 +537,7 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
       if (action === "use-variant") await savePreferredView({ ...state.preferredView, mode: "variant", variant: element.dataset.variant });
       if (action === "use-custom") await savePreferredView({ ...state.preferredView, mode: "custom", layout: draftLayout });
       if (action === "use-classic") await savePreferredView({ ...state.preferredView, mode: "classic" });
-      if (action === "open-studio") { defaultMenuOpen = false; comparisonOpen = false; const url = new URL(location.href); url.searchParams.delete("review"); history.replaceState(null, "", url); studioOpen = true; draftLayout = structuredClone(state.preferredView?.layout || DEFAULT_LAYOUT); renderLab(); }
+      if (action === "open-studio") { defaultMenuOpen = false; comparisonOpen = false; const url = new URL(location.href); url.searchParams.delete("review"); history.replaceState(null, "", url); studioOpen = true; draftLayout = normalizeLayout(state.preferredView?.layout); renderLab(); }
       if (action === "close-studio") { studioOpen = false; renderLab(); }
       if (action === "studio-shell") { draftLayout.shellVariant = element.dataset.variant; renderLab(); }
       if (action === "move-section") {
@@ -614,11 +638,11 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
     },
     update(snapshot) {
       state = snapshot;
-      if (!studioOpen) draftLayout = structuredClone(state.preferredView?.layout || DEFAULT_LAYOUT);
+      if (!studioOpen) draftLayout = normalizeLayout(state.preferredView?.layout);
       decorate();
       if (!composerTarget && !labRoot.querySelector("input:focus, textarea:focus")) renderLab();
     },
-    openStudio() { defaultMenuOpen = false; comparisonOpen = false; studioOpen = true; draftLayout = structuredClone(state.preferredView?.layout || DEFAULT_LAYOUT); renderLab(); },
+    openStudio() { defaultMenuOpen = false; comparisonOpen = false; studioOpen = true; draftLayout = normalizeLayout(state.preferredView?.layout); renderLab(); },
     preferredView() { return structuredClone(state.preferredView); },
   };
 }

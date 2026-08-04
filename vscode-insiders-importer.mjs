@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
-import { readFile, readdir, stat } from "node:fs/promises";
-import { parseVsCodeChatJournal } from "./copilot-capture.mjs";
+import { readdir, stat } from "node:fs/promises";
+import { parseVsCodeChatJournalFile } from "./copilot-capture.mjs";
 import { INSIDERS_LOCAL_PROFILE_ID } from "./usage-timeline-store.mjs";
 
 const DEFAULT_POLL_MS = 5_000;
@@ -120,18 +120,28 @@ export function normalizeVsCodeInsidersRequest({ sessionId, journalName, request
 }
 
 async function listChatJournals(root) {
-  const journals = [];
+  const journalsByName = new Map();
   let workspaces;
   try { workspaces = await readdir(root, { withFileTypes: true }); }
-  catch (error) { return { journals, unavailable: error.code === "ENOENT" || error.code === "ENOTDIR", failure: error.message }; }
+  catch (error) { return { journals: [], unavailable: error.code === "ENOENT" || error.code === "ENOTDIR", failure: error.message }; }
   for (const workspace of workspaces) {
     if (!workspace.isDirectory()) continue;
     const chatDirectory = path.join(root, workspace.name, "chatSessions");
     let entries;
     try { entries = await readdir(chatDirectory, { withFileTypes: true }); } catch { continue; }
-    for (const entry of entries) if (entry.isFile() && entry.name.endsWith(".jsonl")) journals.push(path.join(chatDirectory, entry.name));
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const file = path.join(chatDirectory, entry.name);
+      let fileStat;
+      try { fileStat = await stat(file); } catch { continue; }
+      const previous = journalsByName.get(entry.name);
+      if (!previous || fileStat.mtimeMs > previous.mtimeMs ||
+          (fileStat.mtimeMs === previous.mtimeMs && fileStat.size > previous.size)) {
+        journalsByName.set(entry.name, { file, mtimeMs: fileStat.mtimeMs, size: fileStat.size });
+      }
+    }
   }
-  return { journals, unavailable: false, failure: null };
+  return { journals: [...journalsByName.values()].map((entry) => entry.file), unavailable: false, failure: null };
 }
 
 export function createVsCodeInsidersImporter({
@@ -141,6 +151,16 @@ export function createVsCodeInsidersImporter({
   onChange = () => {},
 } = {}) {
   if (!store?.upsertImport) throw new Error("createVsCodeInsidersImporter requires a usage timeline store");
+  let persistedSnapshot = null;
+  try { persistedSnapshot = store.snapshot?.() || null; } catch { /* A store snapshot is an optional startup optimization. */ }
+  const persistedCoverage = persistedSnapshot?.coverage?.["vscode-insiders"] || null;
+  const knownJournalNames = new Set((persistedSnapshot?.sessions || [])
+    .map((session) => session.sourceReference?.journalName)
+    .filter(Boolean));
+  let completedScanAt = persistedCoverage?.status === "available"
+    ? Date.parse(persistedCoverage.checkedAt)
+    : Number.NaN;
+  let knownLatestClientRecordAt = toIso(persistedCoverage?.latestClientRecordAt) || null;
   const files = new Map(); // Ephemeral paths and safe normalized records only; never persisted.
   let poller;
   let pending = null;
@@ -151,7 +171,7 @@ export function createVsCodeInsidersImporter({
       const checkedAt = new Date().toISOString();
       const scan = await listChatJournals(root);
       let parseableJournalCount = 0;
-      let latestClientRecordAt = null;
+      let latestClientRecordAt = knownLatestClientRecordAt;
       let failure = scan.failure;
       const seen = new Set(scan.journals);
       const sessionsToImport = [];
@@ -165,8 +185,15 @@ export function createVsCodeInsidersImporter({
           for (const event of previous.events) if (!latestClientRecordAt || event.timing.startedAt > latestClientRecordAt) latestClientRecordAt = event.timing.startedAt;
           continue;
         }
+        const journalName = path.basename(file, ".jsonl");
+        if (!previous && knownJournalNames.has(journalName) &&
+            Number.isFinite(completedScanAt) && fileStat.mtimeMs <= completedScanAt) {
+          files.set(file, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, events: [] });
+          parseableJournalCount += 1;
+          continue;
+        }
         try {
-          const state = parseVsCodeChatJournal(await readFile(file, "utf8"));
+          const state = await parseVsCodeChatJournalFile(file);
           const sessionId = typeof state.sessionId === "string" && state.sessionId ? state.sessionId : null;
           const journalName = path.basename(file, ".jsonl");
           const normalized = (state.requests || []).map((request, requestOrdinal) =>
@@ -201,6 +228,11 @@ export function createVsCodeInsidersImporter({
         usageEvents: eventsToImport,
         coverage,
       });
+      for (const session of sessionsToImport) {
+        if (session.sourceReference?.journalName) knownJournalNames.add(session.sourceReference.journalName);
+      }
+      if (coverage.status === "available") completedScanAt = Date.parse(checkedAt);
+      knownLatestClientRecordAt = latestClientRecordAt;
       const change = { ...result, coverage };
       onChange(change);
       return change;

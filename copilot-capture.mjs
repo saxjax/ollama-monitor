@@ -1,10 +1,16 @@
 import os from "node:os";
 import path from "node:path";
+import { createReadStream } from "node:fs";
 import { appendFile, chmod, mkdir, open, readFile, readdir, stat, unlink } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
 
 const DEFAULT_POLL_MS = 1_000;
 const DEFAULT_MAX_HISTORY = 50;
+const DEFAULT_VSCODE_ROOTS = [
+  { edition: "vscode", root: path.join(os.homedir(), "Library", "Application Support", "Code", "User", "workspaceStorage") },
+  { edition: "vscode-insiders", root: path.join(os.homedir(), "Library", "Application Support", "Code - Insiders", "User", "workspaceStorage") },
+];
 
 function asText(value) {
   if (typeof value === "string") return value;
@@ -45,6 +51,19 @@ function applyJournalEntry(state, entry) {
 export function parseVsCodeChatJournal(contents) {
   let state;
   for (const line of contents.split("\n")) {
+    if (!line.trim()) continue;
+    try { state = applyJournalEntry(state, JSON.parse(line)); } catch { /* Ignore an incomplete final write. */ }
+  }
+  return state || { requests: [] };
+}
+
+export async function parseVsCodeChatJournalFile(file) {
+  let state;
+  const lines = createInterface({
+    input: createReadStream(file, { encoding: "utf8" }),
+    crlfDelay: Infinity,
+  });
+  for await (const line of lines) {
     if (!line.trim()) continue;
     try { state = applyJournalEntry(state, JSON.parse(line)); } catch { /* Ignore an incomplete final write. */ }
   }
@@ -155,9 +174,14 @@ function reconstructedVsCodeContext(request, sessionState, rendered) {
   };
 }
 
+export function vsCodeRequestId(edition, sessionId, request) {
+  const source = edition === "vscode-insiders" ? "vscode-insiders" : "vscode";
+  return `${source}-${sessionId}-${request.requestId || request.responseId || request.timestamp}`;
+}
+
 export function normalizeVsCodeRequest(edition, sessionId, request, sessionState = {}) {
   const source = edition === "vscode-insiders" ? "vscode-insiders" : "vscode";
-  const id = `${source}-${sessionId}-${request.requestId || request.responseId || request.timestamp}`;
+  const id = vsCodeRequestId(edition, sessionId, request);
   const message = valueText(request.message?.text ?? request.message);
   const context = request.variableData?.variables?.length
     ? section("ATTACHED CONTEXT", request.variableData.variables)
@@ -172,7 +196,7 @@ export function normalizeVsCodeRequest(edition, sessionId, request, sessionState
   const localContext = exactContext ? null : reconstructedVsCodeContext(request, sessionState, rendered);
   const selectedModel = sessionState.inputState?.selectedModel;
   const contextWindow = selectedModel?.identifier === request.modelId
-    ? selectedModel.metadata?.maxInputTokens
+    ? selectedModel?.metadata?.maxInputTokens
     : undefined;
   const promptTokens = request.promptTokens ?? resultMetadata.promptTokens;
   const outputTokens = request.completionTokens ?? resultMetadata.outputTokens;
@@ -208,6 +232,35 @@ export function normalizeVsCodeRequest(edition, sessionId, request, sessionState
   });
 }
 
+// Prototype-only forensic read: resolve one exact request from the provider's
+// local journal when the user opens its paper. Full content is deliberately
+// loaded on demand instead of bloating the durable numeric timeline.
+export async function readVsCodeRequestCapture({ edition, sessionId, requestId, vscodeRoots = DEFAULT_VSCODE_ROOTS } = {}) {
+  if (!["vscode", "vscode-insiders"].includes(edition)) return null;
+  if (!sessionId || path.basename(sessionId) !== sessionId || sessionId.includes("\0")) return null;
+  if (!requestId || typeof requestId !== "string") return null;
+  const adapter = vscodeRoots.find((entry) => entry.edition === edition);
+  if (!adapter) return null;
+  let workspaces = [];
+  try { workspaces = await readdir(adapter.root, { withFileTypes: true }); } catch { return null; }
+  const candidates = [];
+  for (const workspace of workspaces) {
+    if (!workspace.isDirectory()) continue;
+    const file = path.join(adapter.root, workspace.name, "chatSessions", `${sessionId}.jsonl`);
+    try {
+      const fileStat = await stat(file);
+      candidates.push({ file, mtimeMs: fileStat.mtimeMs });
+    } catch { /* This workspace does not contain the requested journal. */ }
+  }
+  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  for (const candidate of candidates) {
+    const state = await parseVsCodeChatJournalFile(candidate.file);
+    const request = (state.requests || []).find((entry) => entry.requestId === requestId || entry.responseId === requestId);
+    if (request) return normalizeVsCodeRequest(edition, state.sessionId || sessionId, request, state);
+  }
+  return null;
+}
+
 function normalizeStored(item) {
   return normalizeCaptureRecord({ source: "copilot-cli", ...item });
 }
@@ -226,14 +279,19 @@ function vscodeCompletionSignature(item) {
 
 export async function loadCopilotCaptureHistory(logPath, maxHistory = DEFAULT_MAX_HISTORY) {
   try {
-    const lines = (await readFile(logPath, "utf8")).trim().split("\n").filter(Boolean);
     const byId = new Map();
-    for (const line of lines) {
+    const lines = createInterface({
+      input: createReadStream(logPath, { encoding: "utf8" }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of lines) {
+      if (!line.trim()) continue;
       const item = normalizeStored(JSON.parse(line));
       byId.delete(item.id);
       byId.set(item.id, item);
+      while (byId.size > maxHistory) byId.delete(byId.keys().next().value);
     }
-    return [...byId.values()].slice(-maxHistory).reverse();
+    return [...byId.values()].reverse();
   } catch {
     return [];
   }
@@ -242,10 +300,7 @@ export async function loadCopilotCaptureHistory(logPath, maxHistory = DEFAULT_MA
 export async function createCopilotCapture({
   dataDir,
   sessionsRoot = path.join(os.homedir(), ".copilot", "session-state"),
-  vscodeRoots = [
-    { edition: "vscode", root: path.join(os.homedir(), "Library", "Application Support", "Code", "User", "workspaceStorage") },
-    { edition: "vscode-insiders", root: path.join(os.homedir(), "Library", "Application Support", "Code - Insiders", "User", "workspaceStorage") },
-  ],
+  vscodeRoots = DEFAULT_VSCODE_ROOTS,
   pollMs = DEFAULT_POLL_MS,
   maxHistory = DEFAULT_MAX_HISTORY,
   onChange = () => {},
@@ -353,7 +408,6 @@ export async function createCopilotCapture({
     const previous = vscodeTracked.get(item.id);
     if (previous?.status === "complete" && item.status === "complete" &&
         vscodeCompletionSignature(previous) === vscodeCompletionSignature(item)) return;
-    vscodeTracked.set(item.id, item);
     if (!previous) {
       if (item.status === "complete") {
         history.unshift({ ...item });
@@ -361,12 +415,14 @@ export async function createCopilotCapture({
         void persist(item);
         onChange("complete", { ...item });
       } else {
+        vscodeTracked.set(item.id, item);
         active.set(item.id, item);
         onChange("started", { ...item });
       }
       return;
     }
     if (item.status === "complete") {
+      vscodeTracked.delete(item.id);
       active.delete(item.id);
       const index = history.findIndex((entry) => entry.id === item.id);
       if (index >= 0) history[index] = { ...item };
@@ -375,6 +431,7 @@ export async function createCopilotCapture({
       void persist(item);
       onChange("complete", { ...item });
     } else {
+      vscodeTracked.set(item.id, item);
       active.set(item.id, item);
       onChange("updated", { ...item });
     }
@@ -547,19 +604,27 @@ export async function createCopilotCapture({
   }
 
   async function listChatJournals(root) {
-    const found = [];
+    const foundByName = new Map();
     let workspaces = [];
-    try { workspaces = await readdir(root, { withFileTypes: true }); } catch { return found; }
+    try { workspaces = await readdir(root, { withFileTypes: true }); } catch { return []; }
     for (const workspace of workspaces) {
       if (!workspace.isDirectory()) continue;
       const directory = path.join(root, workspace.name, "chatSessions");
       let entries = [];
       try { entries = await readdir(directory, { withFileTypes: true }); } catch { continue; }
       for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith(".jsonl")) found.push(path.join(directory, entry.name));
+        if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+        const file = path.join(directory, entry.name);
+        let fileStat;
+        try { fileStat = await stat(file); } catch { continue; }
+        const previous = foundByName.get(entry.name);
+        if (!previous || fileStat.mtimeMs > previous.mtimeMs ||
+            (fileStat.mtimeMs === previous.mtimeMs && fileStat.size > previous.size)) {
+          foundByName.set(entry.name, { file, mtimeMs: fileStat.mtimeMs, size: fileStat.size });
+        }
       }
     }
-    return found;
+    return [...foundByName.values()].map((entry) => entry.file);
   }
 
   async function discoverVsCode(initial = false) {
@@ -573,19 +638,21 @@ export async function createCopilotCapture({
           vscodeFiles.set(file, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, requestIds: new Set() });
           continue;
         }
-        const state = parseVsCodeChatJournal(await readFile(file, "utf8"));
+        const state = await parseVsCodeChatJournalFile(file);
         const sessionId = state.sessionId || path.basename(file, ".jsonl");
         const requestIds = new Set((state.requests || []).map((request) =>
-          normalizeVsCodeRequest(adapter.edition, sessionId, request, state).id
+          vsCodeRequestId(adapter.edition, sessionId, request)
         ));
         if (!previous) {
           vscodeFiles.set(file, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, requestIds });
         }
         const known = previous?.requestIds || new Set();
         for (const request of state.requests || []) {
-          const item = normalizeVsCodeRequest(adapter.edition, sessionId, request, state);
-          if (!known.has(item.id) && Number(request.timestamp || 0) < captureStartedAt) continue;
-          if (!known.has(item.id) || vscodeTracked.has(item.id)) acceptVsCodeItem(item);
+          const id = vsCodeRequestId(adapter.edition, sessionId, request);
+          if (!known.has(id) && Number(request.timestamp || 0) < captureStartedAt) continue;
+          if (!known.has(id) || vscodeTracked.has(id)) {
+            acceptVsCodeItem(normalizeVsCodeRequest(adapter.edition, sessionId, request, state));
+          }
         }
         vscodeFiles.set(file, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, requestIds });
       }

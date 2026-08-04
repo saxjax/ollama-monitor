@@ -1,4 +1,4 @@
-// PROTOTYPE — five disposable full-monitor directions, switchable with
+// PROTOTYPE — eight disposable full-monitor directions, switchable with
 // /monitor/?prototype=monitor&variant=A. Monitor data stays read-only; the
 // separate prototype review layer persists only comments and aggregate usage.
 
@@ -13,10 +13,13 @@ const VARIANTS = {
   C: "Machine room",
   D: "Month contact sheet",
   E: "Incident ledger",
+  F: "Credit garden",
+  H: "Prompt loom",
+  I: "Run the month",
   G: "Build your own",
 };
 
-const VISUAL_VARIANTS = ["A0", "A", "B", "C", "D", "E"];
+const VISUAL_VARIANTS = ["A0", "A", "B", "C", "D", "E", "F", "H", "I"];
 
 const FAMILY_COLORS = {
   claude: "#e7654b",
@@ -145,6 +148,11 @@ function normalizeEvents(snapshot) {
       prompt: event.promptExcerpt || "Prompt excerpt was cleared or not supplied.",
       source: [source.client || "Local client", source.journalSessionId ? `session ${source.journalSessionId}` : null, source.requestStartedAt || event.timing?.startedAt || instant].filter(Boolean).join(" · "),
       sessionId: source.journalSessionId || event.sessionId || event.id || `event-${index}`,
+      journalSessionId: source.journalSessionId || null,
+      journalName: source.journalName || null,
+      requestId: source.requestId || event.identity?.requestId || null,
+      responseId: source.responseId || event.identity?.responseId || null,
+      captureClient: origin === "vscode-insiders" ? "vscode-insiders" : origin === "vscode" ? "vscode" : null,
       evidenceSource: event.evidence?.source || "unknown",
       evidenceStatus: event.evidence?.status || "unverified",
       identityStrength: event.identity?.strength || "unknown",
@@ -372,6 +380,10 @@ function selectOptions(values, current, labels = {}) {
 
 function controlDeck(model) {
   const activeFilters = [model.filters.provider, model.filters.origin, model.filters.model].filter((value) => value !== "all").length + (model.filters.search ? 1 : 0);
+  const planningVariant = ["F", "H", "I"].includes(model.variant);
+  const referenceControl = planningVariant
+    ? `<label class="mux-reference-select">Reference month<select data-action="reference-select"><option value="">No comparison</option>${model.months.filter((item) => item !== model.month).map((item) => `<option value="${item}" ${model.referenceMonth === item ? "selected" : ""}>${formatMonth(item)}</option>`).join("")}</select></label>`
+    : `<div><span>Reference month</span>${model.months.filter((item) => item !== model.month).map((item) => `<button data-action="reference" data-month="${item}" class="${model.referenceMonth === item ? "is-active" : ""}">${formatMonth(item, true)}</button>`).join("")}</div>`;
   const compactSummary = [
     `${model.filteredEvents.length.toLocaleString()} events`,
     activeFilters ? `${activeFilters} filter${activeFilters === 1 ? "" : "s"}` : "all sources",
@@ -386,7 +398,7 @@ function controlDeck(model) {
       <label class="mux-search">Prompt or session<input data-action="search" value="${escapeHtml(model.filters.search)}" placeholder="Search locally captured evidence" /></label>
     </div>
     <div class="mux-control-row">
-      <div><span>Reference month</span>${model.months.filter((item) => item !== model.month).map((item) => `<button data-action="reference" data-month="${item}" class="${model.referenceMonth === item ? "is-active" : ""}">${formatMonth(item, true)}</button>`).join("")}</div>
+      ${referenceControl}
       <div><span>Rank spikes by</span>${[["value", "Total"], ["jump", "% jump"], ["unusual", "Unusual for time"]].map(([key, label]) => `<button data-action="anomaly" data-mode="${key}" class="${model.anomalyMode === key ? "is-active" : ""}">${label}</button>`).join("")}<label class="mux-threshold">Minimum <input data-action="threshold" type="number" min="0" step="1" value="${model.threshold || ""}" placeholder="0" /></label></div>
       <div><span>Inspection scale</span>${[["month", "Month"], ["day", "Day"], ["slot", "30 min"], ["session", "Session"]].map(([key, label]) => `<button data-action="zoom" data-zoom="${key}" class="${model.zoom === key ? "is-active" : ""}" ${key === "session" && !model.selectedSessionId ? "disabled" : ""}>${label}</button>`).join("")}</div>
       <div><span>Table date/time</span>${[["desc", "Newest first ↓"], ["asc", "Oldest first ↑"]].map(([key, label]) => `<button data-action="sort" data-sort="${key}" class="${model.sortDirection === key ? "is-active" : ""}" aria-pressed="${model.sortDirection === key}">${label}</button>`).join("")}</div>
@@ -756,11 +768,17 @@ function evidence(model, limit = 24) {
     .sort((left, right) => globalThis.SaxjaxDateTimeSort.compareDateTimes(left, right, model.sortDirection, (event) => event.startedAt));
   const value = events.filter((event) => Number.isFinite(event[model.unit])).reduce((sum, event) => sum + event[model.unit], 0);
   const missing = events.filter((event) => !Number.isFinite(event[model.unit])).length;
-  return `<section class="mux-evidence">
-    <header><div><span>${session?.length ? "Selected session" : "Selected interval"}</span><h2>${session?.length ? escapeHtml(model.selectedSessionId) : `${selected?.day || "—"} · ${selected ? `${clock(selected.bucket * 30)}–${clock(selected.bucket * 30 + 30)}` : "—"}`}</h2></div><strong>${events.length && missing === events.length ? `— ${unitLabel(model.unit)} unavailable` : formatLabeledValue(value, model.unit)}</strong><small>${events.length} contributing requests · ${missing ? `${missing} without ${unitLabel(model.unit)} measurement · ` : "all values measured · "}${sortLabel(model.sortDirection)}</small></header>
-    <div class="mux-evidence-list">${events.map((event, index) => `<article style="--family:${ORIGIN_COLORS[event.origin] || ORIGIN_COLORS.other}">
-      <span>Request ${String(index + 1).padStart(2, "0")}</span><div><b>${escapeHtml(event.model)} · ${escapeHtml(event.originLabel)}</b><p>${escapeHtml(event.prompt)}</p><small>${escapeHtml(event.source)}</small><em>${escapeHtml(event.providerLabel)} · ${escapeHtml(event.evidenceStatus)} ${escapeHtml(event.evidenceSource)} · ${escapeHtml(event.identityStrength)} identity${Number.isFinite(event.inputTokens) || Number.isFinite(event.outputTokens) ? ` · ${event.inputTokens?.toLocaleString() || "—"} input tokens / ${event.outputTokens?.toLocaleString() || "—"} output tokens` : ""}</em><button class="mux-copy-source" data-action="copy-source" data-event="${escapeHtml(event.id)}">Copy source reference</button></div><strong>${Number.isFinite(event[model.unit]) ? formatLabeledValue(event[model.unit], model.unit) : `— ${unitLabel(model.unit)} not measured`}</strong>
-    </article>`).join("") || `<p class="mux-empty">No measured request started in this interval.</p>`}</div>
+  return `<section class="mux-evidence" id="mux-forensics">
+    <header><div><span>FORENSICS CASE FILE · ${session?.length ? "SELECTED SESSION" : "SELECTED INTERVAL"}</span><h2>${session?.length ? escapeHtml(model.selectedSessionId) : `${selected?.day || "—"} · ${selected ? `${clock(selected.bucket * 30)}–${clock(selected.bucket * 30 + 30)}` : "—"}`}</h2><p>Open a request in FORENSICS to inspect the actual locally retained machinery: complete input, output, reasoning, tools, and source record—not a résumé.</p></div><strong>${events.length && missing === events.length ? `— ${unitLabel(model.unit)} unavailable` : formatLabeledValue(value, model.unit)}</strong><small>${events.length} contributing requests · ${missing ? `${missing} without ${unitLabel(model.unit)} measurement · ` : "all values measured · "}${sortLabel(model.sortDirection)}</small></header>
+    <div class="mux-evidence-list">${events.map((event, index) => {
+      const exchange = capturedExchange(model, event);
+      const incoming = exchange ? readableCapture(exchange.inputContext, readableCapture(exchange.transformedPrompt, readableCapture(exchange.prompt, event.prompt))) : "";
+      const outgoing = exchange ? readableCapture(exchange.response, "") : "";
+      const reasoning = exchange ? readableCapture(exchange.thinking, "") : "";
+      const canLoadJournal = Boolean(event.captureClient && event.journalSessionId && event.requestId);
+      const isSelectedPaper = event.id === model.selectedEvidenceEventId;
+      return `<article style="--family:${ORIGIN_COLORS[event.origin] || ORIGIN_COLORS.other}"><details class="mux-evidence-paper" data-event-id="${escapeHtml(event.id)}" data-capture-client="${escapeHtml(event.captureClient || "")}" data-capture-session="${escapeHtml(event.journalSessionId || "")}" data-capture-request="${escapeHtml(event.requestId || "")}" data-paper-preview="${escapeHtml(event.prompt)}" data-inline-capture="${exchange ? "true" : "false"}" ${isSelectedPaper ? "open" : ""}><summary><span>Request ${String(index + 1).padStart(2, "0")}</span><div><b>${escapeHtml(event.model)} · ${escapeHtml(event.originLabel)}</b><p>${escapeHtml(event.prompt)}</p><small>${escapeHtml(event.source)}</small><em>${escapeHtml(event.providerLabel)} · ${escapeHtml(event.evidenceStatus)} ${escapeHtml(event.evidenceSource)} · ${escapeHtml(event.identityStrength)} identity${model.unit === "tokens" && (Number.isFinite(event.inputTokens) || Number.isFinite(event.outputTokens)) ? ` · ${event.inputTokens?.toLocaleString() || "—"} input / ${event.outputTokens?.toLocaleString() || "—"} output` : ""}</em></div><strong>${Number.isFinite(event[model.unit]) ? formatLabeledValue(event[model.unit], model.unit) : `— ${unitLabel(model.unit)} not measured`}</strong><i><span>FORENSICS</span><b>OPEN FORENSICS +</b></i></summary><div class="mux-evidence-sheet" data-loaded="${exchange ? "true" : "false"}"><header><span>FORENSICS · FULL LOCAL CAPTURE · REQUEST ${String(index + 1).padStart(2, "0")}</span><b>${escapeHtml(event.requestId || "No request identity")}</b><small data-paper-status>${exchange ? "Actual live capture loaded" : canLoadJournal ? "Open FORENSICS to read the original local journal" : "Only the durable timeline excerpt is available"}</small></header><div class="mux-paper-columns"><section><span>IN / COMPLETE LOCALLY AVAILABLE CONTENT</span><pre data-paper-input>${escapeHtml(incoming || event.prompt)}</pre></section><section><span>OUT / COMPLETE LOCALLY AVAILABLE CONTENT</span><pre data-paper-output>${escapeHtml(outgoing || (canLoadJournal ? "Loading when FORENSICS opens…" : "The complete output is not retained in this timeline record."))}</pre></section><section class="mux-paper-reasoning" ${reasoning ? "" : "hidden"}><span>REASONING / LOCALLY RETAINED</span><pre data-paper-reasoning>${escapeHtml(reasoning)}</pre></section></div><footer><button class="mux-copy-source" data-action="copy-source" data-event="${escapeHtml(event.id)}">Copy source reference</button><span>${escapeHtml(event.source)}</span><button class="mux-close-paper" data-action="close-forensics">CLOSE FORENSICS ↑</button></footer></div></details></article>`;
+    }).join("") || `<p class="mux-empty">No measured request started in this interval.</p>`}</div>
   </section>`;
 }
 
@@ -918,6 +936,447 @@ function VariantE(model) {
       <aside class="mux-e-machine"><header><span>HOST LEDGER</span><b data-live="verdict">${model.system.severity.toUpperCase()}</b></header>${systemStrip(model, true)}${coreRack(model)}</aside>
     </main>
     ${analysisDock(model)}
+  </div>`;
+}
+
+function monthPlanning(model) {
+  const [year, monthNumber] = model.month.split("-").map(Number);
+  const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  const now = new Date();
+  const currentMonth = localParts(now.toISOString()).month;
+  const readings = model.manualReadings
+    .filter((reading) => reading.date.startsWith(model.month) && reading.unit === model.unit)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const latest = readings.at(-1) || null;
+  const previous = readings.at(-2) || null;
+  const copilot = model.copilot || {};
+  const localValue = model.unit === "credits"
+    ? copilot.usedCredits == null ? Number.NaN : Number(copilot.usedCredits)
+    : model.unit === "dollars"
+      ? copilot.estimatedCost == null ? Number.NaN : Number(copilot.estimatedCost)
+      : Number(copilot.observedInputTokens || 0) + Number(copilot.observedOutputTokens || 0);
+  const timelineValue = model.capabilities[model.unit].available ? model.view.total : Number.NaN;
+  const fallbackValue = model.month === currentMonth && Number.isFinite(localValue) ? localValue : timelineValue;
+  const used = latest ? latest.value : Number.isFinite(fallbackValue) ? fallbackValue : 0;
+  const latestDay = latest ? Number(latest.date.slice(-2)) : model.month === currentMonth ? now.getDate() : daysInMonth;
+  const elapsed = Math.max(1, Math.min(daysInMonth, latestDay));
+  const remainingDays = Math.max(0, daysInMonth - elapsed);
+  const forecast = copilot.forecast || {};
+  const capturedVelocity = model.unit === "credits"
+    ? Number(forecast.creditsPerDay)
+    : model.unit === "dollars"
+      ? Number(forecast.creditsPerDay) / 100
+      : (Number(forecast.inputTokens || 0) + Number(forecast.outputTokens || 0)) / Math.max(1, Number(forecast.observationHours || 0) / 24);
+  const completedDays = model.view.daily.slice(0, elapsed);
+  const timelineObserved = completedDays.reduce((sum, day) => sum + day.total, 0);
+  const recentDays = completedDays.slice(-Math.min(7, completedDays.length));
+  const recentWeight = recentDays.reduce((sum, _day, index) => sum + index + 1, 0);
+  const weightedTimelineVelocity = recentWeight
+    ? recentDays.reduce((sum, day, index) => sum + day.total * (index + 1), 0) / recentWeight
+    : 0;
+  const timelineScale = timelineObserved > 0 ? used / timelineObserved : 1;
+  const observedVelocity = weightedTimelineVelocity > 0 ? weightedTimelineVelocity * timelineScale : used / elapsed;
+  let velocity = Number.isFinite(capturedVelocity) && capturedVelocity > 0 ? capturedVelocity : observedVelocity;
+  let velocitySource = Number.isFinite(capturedVelocity) && capturedVelocity > 0 ? "captured request velocity" : "weighted recent daily usage";
+  if (latest && previous) {
+    const span = Math.max(1, (Date.parse(`${latest.date}T12:00:00`) - Date.parse(`${previous.date}T12:00:00`)) / 86_400_000);
+    velocity = Math.max(0, (latest.value - previous.value) / span);
+    velocitySource = "provider reading delta";
+  } else if (!Number.isFinite(velocity) || velocity <= 0) {
+    velocity = used / elapsed;
+    velocitySource = latest ? "provider reading ÷ elapsed days" : "month average";
+  }
+  const additions = model.budgetAdditions
+    .filter((addition) => addition.month === model.month && addition.unit === model.unit)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const baseBudget = Math.max(model.unit === "dollars" ? .01 : 1, model.baseBudgets[model.unit]);
+  const addedBudget = additions.reduce((sum, addition) => sum + addition.value, 0);
+  const target = baseBudget + addedBudget;
+  const sustainable = remainingDays ? Math.max(0, target - used) / remainingDays : 0;
+  const scenarioVelocity = Math.max(0, velocity) * model.paceScenario / 100;
+  const isFinal = remainingDays === 0;
+  const projection = isFinal ? used : used + scenarioVelocity * remainingDays;
+  const finishValue = isFinal ? used : projection;
+  const ratio = sustainable > 0 ? velocity / sustainable : velocity > 0 ? Infinity : 0;
+  const state = finishValue > target * 1.05 ? "over" : finishValue < target * .78 ? "under" : "aligned";
+  const delta = latest && Number.isFinite(localValue) ? latest.value - localValue : null;
+  const budgetDifference = target - finishValue;
+  const originalDifference = finishValue - baseBudget;
+  const distanceRatio = Math.abs(originalDifference) / Math.max(1, baseBudget);
+  const accuracyScore = Math.max(0, Math.round(100 - distanceRatio * 100));
+  const usedBooster = additions.length > 0;
+  const boosterPenalty = usedBooster
+    ? Math.min(25, 4 + additions.length * 3 + Math.round(addedBudget / Math.max(1, baseBudget) * 8))
+    : 0;
+  const unapprovedOverrun = Math.max(0, finishValue - target);
+  const unapprovedOverrunRatio = unapprovedOverrun / Math.max(1, target);
+  const overrunPenalty = unapprovedOverrun > 0
+    ? Math.min(50, 10 + Math.round(unapprovedOverrun / Math.max(1, target) * 40))
+    : 0;
+  const ratingScore = Math.max(0, accuracyScore - boosterPenalty - overrunPenalty);
+  const ratingGrade = ratingScore >= 95 ? "S" : ratingScore >= 85 ? "A" : ratingScore >= 70 ? "B" : ratingScore >= 50 ? "C" : ratingScore >= 25 ? "D" : "F";
+  const ratingLabel = unapprovedOverrun > 0
+    ? `${isFinal ? "Final" : "Projected"} unapproved overrun`
+    : finishValue < baseBudget * .8
+      ? "Underused"
+      : usedBooster && finishValue > baseBudget * 1.05
+        ? "Booster finish"
+        : distanceRatio <= .05
+          ? usedBooster ? "Boosted bullseye" : "Budget bullseye"
+          : finishValue < baseBudget ? "Below target" : "Over original budget";
+  const performanceTone = unapprovedOverrun > 0
+    ? unapprovedOverrunRatio >= 3
+      ? "over-catastrophic"
+      : unapprovedOverrunRatio >= .5
+        ? "over-major"
+        : "over-mild"
+    : finishValue < baseBudget * .8
+      ? "under"
+      : usedBooster
+        ? "boosted"
+        : ratingScore >= 85 ? "aligned" : "warning";
+  const ratingVerdict = ratingScore >= 95
+    ? "LEGENDARY"
+    : ratingScore >= 85
+      ? "NAILED IT"
+      : ratingScore >= 70
+        ? "GOOD"
+        : ratingScore >= 50
+          ? "WOBBLY"
+          : ratingScore >= 25
+            ? "BAD"
+            : "TERRIBLE";
+  const message = unapprovedOverrun > 0
+    ? `${isFinal ? "The month closed" : `At ${formatLabeledValue(scenarioVelocity, model.unit)}/day, you are projected to finish`} at ${formatLabeledValue(finishValue, model.unit)}—${formatLabeledValue(unapprovedOverrun, model.unit)} beyond every approved budget.`
+    : finishValue < baseBudget * .8
+      ? `${isFinal ? "The month closed" : `At ${formatLabeledValue(scenarioVelocity, model.unit)}/day, you are projected to finish`} at ${formatLabeledValue(finishValue, model.unit)}—${formatLabeledValue(baseBudget - finishValue, model.unit)} below the original budget.`
+      : usedBooster
+        ? `${isFinal ? "The final cost" : "The current velocity forecast"} is approved, but ${additions.length} booster${additions.length === 1 ? "" : "s"} subtract ${boosterPenalty} rating points.`
+        : distanceRatio <= .05
+          ? `${isFinal ? "The final cost lands" : "Current velocity lands you"} within 5% of the original budget without using a booster.`
+          : `${isFinal ? "The final cost is" : `At ${formatLabeledValue(scenarioVelocity, model.unit)}/day, month end is projected`} ${formatLabeledValue(Math.abs(originalDifference), model.unit)} from the original budget.`;
+  const dramaEyebrow = unapprovedOverrun > 0
+    ? unapprovedOverrunRatio >= 3
+      ? "🚨 CATASTROPHIC · UNAPPROVED OVERRUN"
+      : unapprovedOverrunRatio >= .5
+        ? "🔥 DANGER · SERIOUS OVERRUN"
+        : unapprovedOverrunRatio >= .1
+          ? "⚠️ OVER BUDGET · RECOVERABLE"
+          : "🟠 SLIGHT OVERRUN · NEAR MISS"
+    : finishValue < baseBudget * .8
+      ? isFinal ? "🥶 FINAL · BUDGET LEFT BEHIND" : "🥶 PACE FORECAST · RUNNING TOO COLD"
+      : usedBooster
+        ? "⚡ APPROVED BOOSTER USED"
+        : distanceRatio <= .05
+          ? "🏆 ORIGINAL-BUDGET BULLSEYE"
+          : "⚠️ WOBBLY FINISH";
+  const underRatio = finishValue / Math.max(1, baseBudget);
+  const dramaTitle = unapprovedOverrun > 0
+    ? unapprovedOverrunRatio >= 3
+      ? "ARE YOU MAD?"
+      : unapprovedOverrunRatio >= 1
+        ? "THE BUDGET IS ON FIRE."
+        : unapprovedOverrunRatio >= .5
+          ? "THIS GOT AWAY FROM YOU."
+          : unapprovedOverrunRatio >= .1
+            ? "EASY, CHAMP."
+            : "MISSED IT BY A WHISKER."
+    : finishValue < baseBudget * .8
+      ? underRatio < .45 ? "ICE AGE INCOMING." : underRatio < .7 ? "TOO COLD. FIND USEFUL WORK." : "YOU’RE LEAVING VALUE ON THE TABLE."
+      : usedBooster
+        ? ratingScore >= 70 ? "LEGAL. NOT ELEGANT." : "BOOSTED. STILL MESSY."
+        : distanceRatio <= .05
+          ? "SUSPICIOUSLY COMPETENT."
+          : finishValue < baseBudget
+            ? "TOO SHY. SPEND WITH PURPOSE."
+            : "YOU SURVIVED. BARELY.";
+  const dramaQuip = unapprovedOverrun > 0
+    ? unapprovedOverrunRatio >= 3
+      ? isFinal ? `You blasted ${formatLabeledValue(unapprovedOverrun, model.unit)} past every approved limit. Your budget would like a restraining order.` : `Current velocity is blasting you ${formatLabeledValue(unapprovedOverrun, model.unit)} past every approved limit. Your budget is filing paperwork.`
+      : unapprovedOverrunRatio >= 1
+        ? isFinal ? `You finished ${formatLabeledValue(unapprovedOverrun, model.unit)} over the approved line—more than an entire extra budget. Please put the flamethrower down.` : `Current velocity carries you ${formatLabeledValue(unapprovedOverrun, model.unit)} over the approved line—more than an entire extra budget. Please lower the flamethrower.`
+        : unapprovedOverrunRatio >= .5
+          ? isFinal ? `You ran ${formatLabeledValue(unapprovedOverrun, model.unit)} over the approved line. This was a real miss, but at least the building is still standing.` : `Current velocity runs ${formatLabeledValue(unapprovedOverrun, model.unit)} over the approved line. This is a real miss, but the brakes still work.`
+          : unapprovedOverrunRatio >= .1
+            ? isFinal ? `You overshot by ${formatLabeledValue(unapprovedOverrun, model.unit)}. Not madness—just enough enthusiasm to earn an awkward meeting.` : `Current velocity overshoots by ${formatLabeledValue(unapprovedOverrun, model.unit)}. Not madness—just enough enthusiasm to schedule an awkward meeting.`
+            : isFinal ? `You slipped ${formatLabeledValue(unapprovedOverrun, model.unit)} over the line. Annoying, fixable, and definitely not a catastrophe.` : `Current velocity slips ${formatLabeledValue(unapprovedOverrun, model.unit)} over the line. Annoying, fixable, and not yet a catastrophe.`
+    : finishValue < baseBudget * .8
+      ? `${isFinal ? "You finished" : `Current velocity lands you`} ${formatLabeledValue(baseBudget - finishValue, model.unit)} below the original budget. Spend on useful work—not ceremonial idling.`
+      : usedBooster
+        ? isFinal ? `${additions.length} approved booster${additions.length === 1 ? "" : "s"} kept the finish legal. The scoreboard still charged ${boosterPenalty} points for the rescue.` : `${additions.length} approved booster${additions.length === 1 ? " is" : "s are"} keeping the forecast legal. The scoreboard currently charges ${boosterPenalty} points for the rescue.`
+        : distanceRatio <= .05
+          ? isFinal ? `You finished within 5% of the original budget: no booster, no excuses. Annoyingly excellent.` : `Current velocity lands within 5% of the original budget: no booster, no excuses. Annoyingly excellent.`
+          : finishValue < baseBudget
+            ? isFinal ? `You finished ${formatLabeledValue(baseBudget - finishValue, model.unit)} short of the original budget. Caution was not the same as control.` : `Current velocity lands ${formatLabeledValue(baseBudget - projection, model.unit)} short of the original budget. Caution is not the same as control.`
+            : isFinal ? `You finished ${formatLabeledValue(finishValue - baseBudget, model.unit)} over the original budget. Close enough to survive, far enough to get side-eye.` : `Current velocity lands ${formatLabeledValue(projection - baseBudget, model.unit)} over the original budget. Close enough to recover, far enough to get side-eye.`;
+  const averageVelocity = used / elapsed;
+  const velocityTrendRatio = averageVelocity > 0 ? scenarioVelocity / averageVelocity : 1;
+  const velocityTrend = velocityTrendRatio <= .65 ? "cooling-fast" : velocityTrendRatio <= .85 ? "cooling" : velocityTrendRatio >= 1.5 ? "accelerating-hard" : velocityTrendRatio >= 1.15 ? "accelerating" : "steady";
+  const trendLabel = velocityTrend === "cooling-fast" ? "COOLING FAST" : velocityTrend === "cooling" ? "COOLING" : velocityTrend === "accelerating-hard" ? "ACCELERATING HARD" : velocityTrend === "accelerating" ? "HEATING UP" : "STEADY PACE";
+  const forecastRatio = finishValue / Math.max(1, target);
+  const paceClimate = forecastRatio < .45 ? "deep-freeze" : forecastRatio < .7 ? "frost" : forecastRatio < .9 ? "cool" : forecastRatio <= 1.05 ? "gold" : forecastRatio <= 1.25 ? "warm" : forecastRatio <= 1.75 ? "hot" : forecastRatio <= 3 ? "inferno" : "meltdown";
+  const paceStory = isFinal
+    ? `MONTH CLOSED · rating uses the final ${unitLabel(model.unit)} total only.`
+    : finishValue > target && velocityTrendRatio < .85
+      ? `Still projected over budget, but recent velocity is cooling. Hold the lower pace.`
+      : finishValue < baseBudget * .8 && velocityTrendRatio > 1.15
+        ? `The forecast is still cold, but velocity is heating up. Do not assume the low finish is secure.`
+        : `${trendLabel} · ${formatLabeledValue(scenarioVelocity, model.unit)}/day now points to ${formatLabeledValue(projection, model.unit)} at month end.`;
+  const efficiencyWindow = Math.min(7, Math.floor(completedDays.length / 2));
+  const efficiencyRecent = efficiencyWindow ? completedDays.slice(-efficiencyWindow) : [];
+  const efficiencyPrevious = efficiencyWindow ? completedDays.slice(-efficiencyWindow * 2, -efficiencyWindow) : [];
+  const windowStats = (days) => ({ value: days.reduce((sum, day) => sum + day.total, 0), requests: days.reduce((sum, day) => sum + day.events.length, 0) });
+  const recentStats = windowStats(efficiencyRecent);
+  const previousStats = windowStats(efficiencyPrevious);
+  const recentPerRequest = recentStats.requests ? recentStats.value / recentStats.requests : 0;
+  const previousPerRequest = previousStats.requests ? previousStats.value / previousStats.requests : 0;
+  const efficiencyRatio = previousPerRequest > 0 ? recentPerRequest / previousPerRequest : 1;
+  const efficiencySignal = efficiencyWindow >= 2 && recentStats.requests >= 5 && previousStats.requests >= 5 && efficiencyRatio <= .78
+    ? { percent: Math.round((1 - efficiencyRatio) * 100), recentPerRequest, previousPerRequest }
+    : null;
+  const ratingBasis = isFinal ? "FINAL ACTUAL COST" : "CURRENT VELOCITY FORECAST";
+  const ratingBasisDetail = isFinal ? "Month closed: score uses actual final cost." : `Month open: score uses projected ${formatLabeledValue(projection, model.unit)} month end.`;
+  return { readings, latest, previous, additions, daysInMonth, elapsed, remainingDays, isFinal, used, velocity, velocitySource, averageVelocity, velocityTrendRatio, velocityTrend, trendLabel, paceClimate, paceStory, baseBudget, addedBudget, target, sustainable, scenarioVelocity, projection, finishValue, budgetDifference, originalDifference, distanceRatio, accuracyScore, usedBooster, boosterPenalty, unapprovedOverrun, unapprovedOverrunRatio, overrunPenalty, ratingScore, ratingGrade, ratingLabel, ratingVerdict, ratingBasis, ratingBasisDetail, performanceTone, efficiencySignal, ratio, state, delta, message, dramaEyebrow, dramaTitle, dramaQuip };
+}
+
+const PROMPT_RULES = {
+  broad: { label: "Unbounded ask", advice: "Name the exact outcome, files, and stopping condition before the agent explores." },
+  repeated: { label: "Repeated context", advice: "Remove duplicate lines and point at one canonical source instead of pasting it again." },
+  oversized: { label: "Context avalanche", advice: "Split discovery from implementation and carry forward a short verified brief." },
+  contract: { label: "No output contract", advice: "Specify the expected artifact, verification, and what a finished answer must contain." },
+  ratio: { label: "Input-heavy turn", advice: "Start a clean task or summarize accumulated context when input dwarfs useful output." },
+};
+
+function promptHygiene(model) {
+  const incidents = [];
+  for (const event of model.view.monthEvents.filter((item) => item.provider === "github-copilot" || item.origin.includes("vscode") || item.origin === "copilot-cli")) {
+    const prompt = String(event.prompt || "").trim();
+    const lines = prompt.split(/\n+/).map((line) => line.trim().toLowerCase()).filter((line) => line.length > 18);
+    const duplicateLines = lines.length - new Set(lines).size;
+    const rules = [];
+    if (/\b(make it better|do everything|fix everything|help me|improve this|whatever is needed)\b/i.test(prompt)) rules.push("broad");
+    if (duplicateLines > 0) rules.push("repeated");
+    if (prompt.length > 1800 || Number(event.inputTokens) > 12_000) rules.push("oversized");
+    if (prompt.length > 120 && !/\b(return|output|produce|create|implement|write|explain|list|verify|test|format|file|component|function)\b/i.test(prompt)) rules.push("contract");
+    if (Number(event.inputTokens) > 4_000 && Number(event.inputTokens) > Math.max(1, Number(event.outputTokens) || 0) * 18) rules.push("ratio");
+    if (!rules.length) continue;
+    incidents.push({ event, rules, score: rules.length * 2 + Math.log10(Math.max(10, Number(event.inputTokens) || prompt.length / 3.4)) });
+  }
+  incidents.sort((left, right) => right.score - left.score);
+  const counts = Object.keys(PROMPT_RULES).map((key) => ({ key, count: incidents.filter((incident) => incident.rules.includes(key)).length }));
+  const flaggedUsage = incidents.reduce((sum, incident) => sum + unitValue(incident.event, model.unit), 0);
+  return { incidents, counts, flaggedUsage };
+}
+
+function capturedExchange(model, event) {
+  const traffic = model.traffic || [];
+  const exact = traffic.find((item) => item.id === event.id)
+    || traffic.find((item) => item.session?.id === event.sessionId && item.startedAt === event.startedAt)
+    || traffic.find((item) => item.startedAt === event.startedAt)
+    || null;
+  if (exact) return exact;
+  const sessionMatches = traffic.filter((item) => item.session?.id === event.sessionId || item.sessionId === event.sessionId);
+  return sessionMatches.length === 1 ? sessionMatches[0] : null;
+}
+
+function readableCapture(value, fallback) {
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return fallback;
+}
+
+function manualReadingList(model, treatment) {
+  const plan = monthPlanning(model);
+  const suggestedDate = model.manualReadingDate.startsWith(model.month)
+    ? model.manualReadingDate
+    : `${model.month}-${String(Math.min(plan.daysInMonth, new Date().getDate())).padStart(2, "0")}`;
+  const measurementLabel = model.unit === "dollars" ? "Estimated USD used" : model.unit === "tokens" ? "Tokens used" : "Credits used";
+  const step = model.unit === "dollars" ? ".01" : model.unit === "tokens" ? "1" : ".1";
+  const rows = plan.readings.map((reading) => `<li><time>${reading.date.slice(-2)}</time><b>${formatValue(reading.value, model.unit)}</b><span>${unitLabel(model.unit)}</span><button data-action="remove-reading" data-reading-id="${reading.id}" aria-label="Remove ${reading.date} reading">×</button></li>`).join("");
+  return `<section class="mux-manual mux-manual-${treatment}" data-feedback-id="manual-github-readings" data-feedback-kind="control" data-feedback-label="Manual provider readings">
+    <header><span>MANUAL TRUTH / PROVIDER PAGE</span><h2>${treatment === "garden" ? "Rain-gauge calibration" : treatment === "loom" ? "Thread-counter readings" : "Checkpoint scorekeeper"}</h2><p>Enter the provider page’s month-to-date ${unitLabel(model.unit)}. Two readings replace estimated velocity with their measured delta.</p></header>
+    <form data-action="manual-reading"><label>Date<input name="date" type="date" value="${suggestedDate}" min="${model.month}-01" max="${model.month}-${String(plan.daysInMonth).padStart(2, "0")}" required></label><label>${measurementLabel}<input name="reading" type="number" min="0" step="${step}" placeholder="Enter ${unitLabel(model.unit)}" required></label><button type="submit">Add reading</button></form>
+    <ol>${rows || "<li class=\"is-empty\">No manual readings yet · using local estimates</li>"}</ol>
+    <small>Prototype-only: readings stay in memory and disappear when this page closes.</small>
+  </section>`;
+}
+
+function courseControls(model, treatment) {
+  const plan = monthPlanning(model);
+  const additionStep = model.unit === "dollars" ? ".01" : "1";
+  const suggestedAdditionDate = model.budgetAdditionDate.startsWith(model.month)
+    ? model.budgetAdditionDate
+    : `${model.month}-${String(Math.min(plan.daysInMonth, new Date().getDate())).padStart(2, "0")}`;
+  const additionRows = plan.additions.map((addition, index) => `<li><time>${addition.date.slice(-2)}</time><span>Booster ${index + 1} used</span><b>+${formatValue(addition.value, model.unit, true)}</b><button data-action="remove-budget-addition" data-budget-addition-id="${addition.id}" aria-label="Remove booster added ${addition.date}">×</button></li>`).join("");
+  const selectedPace = model.paceScenario === 100 ? "current pace" : `${model.paceScenario}% of current pace`;
+  return `<section class="mux-course mux-course-${treatment}" data-course="${treatment === "board" ? plan.performanceTone : plan.state}" data-feedback-id="course-control" data-feedback-kind="control" data-feedback-label="Monthly budget planner">
+    <header><span>${escapeHtml(plan.ratingBasis)}</span><div class="mux-course-rating"><b>${plan.ratingScore}</b><span>/100 · GRADE ${plan.ratingGrade}</span><em>${escapeHtml(plan.ratingLabel)}</em></div><strong>${escapeHtml(plan.message)}</strong><small>${escapeHtml(plan.ratingBasisDetail)}</small></header>
+    <div class="mux-rating-breakdown"><span>Original-budget accuracy <b>${plan.accuracyScore}</b></span><span>Booster penalty <b>−${plan.boosterPenalty}</b></span><span>Unapproved-overrun penalty <b>−${plan.overrunPenalty}</b></span></div>
+    <div class="mux-course-numbers">
+      <span><b>${formatValue(plan.used, model.unit, true)}</b>Spent so far<small>Recorded in ${formatMonth(model.month, true)} through day ${plan.elapsed}.</small></span>
+      <span><b>${formatValue(plan.velocity, model.unit, true)}</b>Current velocity / day<small>${escapeHtml(plan.velocitySource)}.</small></span>
+      <span><b>${formatValue(plan.projection, model.unit, true)}</b>${plan.isFinal ? "Final month cost" : "If this pace continues"}<small>${plan.isFinal ? "The month is closed; this is actual." : `Spent so far plus ${plan.remainingDays} days at ${selectedPace}.`}</small></span>
+      <span><b>${formatValue(plan.target, model.unit, true)}</b>Total approved<small>${formatValue(plan.baseBudget, model.unit, true)} original + ${formatValue(plan.addedBudget, model.unit, true)} in boosters.</small></span>
+    </div>
+    <div class="mux-budget-builder">
+      <label><span>Base monthly budget</span><small>The amount approved at the start of the month.</small><input data-action="base-budget" type="number" min="${model.unit === "dollars" ? ".01" : "1"}" max="100000000000" step="${additionStep}" value="${plan.baseBudget}"></label>
+      <form data-action="budget-addition"><span>Approved budget booster</span><small>A booster makes extra spending legal, but its use and size reduce the finish rating.</small><label>Date<input name="date" type="date" value="${suggestedAdditionDate}" min="${model.month}-01" max="${model.month}-${String(plan.daysInMonth).padStart(2, "0")}" required></label><label>Amount<input name="amount" type="number" min="${additionStep}" step="${additionStep}" placeholder="Add ${unitLabel(model.unit)}" required></label><button type="submit">Activate booster</button></form>
+      <ol>${additionRows || "<li class=\"is-empty\">No boosters used this month.</li>"}</ol>
+      <div class="mux-budget-total"><span>Total approved this month</span><b>${formatValue(plan.target, model.unit, true)}</b></div>
+    </div>
+    <label class="mux-course-scenario">Forecast scenario <b>${model.paceScenario}%</b><input data-action="pace-scenario" type="range" min="20" max="180" step="5" value="${model.paceScenario}"><small>Adjust this only to ask “what if my future usage changes?” It does not change your budget.</small></label>
+    <footer><b>${escapeHtml(plan.paceStory)}</b>${plan.efficiencySignal ? `<span>EFFICIENCY CLUE · recent ${unitLabel(model.unit)} per request fell ${plan.efficiencySignal.percent}%. Something in the setup or prompting may have become cheaper—inspect FORENSICS before taking credit.</span>` : ""}${plan.delta == null ? "" : `<span>The provider is ${formatLabeledValue(Math.abs(plan.delta), model.unit)} ${plan.delta >= 0 ? "above" : "below"} the local count.</span>`}</footer>
+  </section>`;
+}
+
+function promptCoach(model, treatment, limit = 5) {
+  const hygiene = promptHygiene(model);
+  return `<section class="mux-prompt-coach mux-prompt-${treatment}" data-feedback-id="prompt-coach" data-feedback-kind="section" data-feedback-label="Automatic prompt practice coach">
+    <header><div><span>PROMPT COST & PRACTICE COACH</span><h2>${hygiene.incidents.length ? `${hygiene.incidents.length} prompts may be inflating context, cost, or rework` : "No obvious costly prompt habits in this view"}</h2><p>Heuristics surface prompts worth improving. Open one for the coaching view, then use FORENSICS for the actual machine record.</p></div><strong><span>Recorded usage of flagged requests</span><b>${hygiene.flaggedUsage ? formatValue(hygiene.flaggedUsage, model.unit, true) : "—"}</b><small>This is usage attached to those requests—not waste or predicted savings.</small></strong></header>
+    <div class="mux-prompt-signals">${hygiene.counts.map((item) => `<span data-active="${item.count > 0}"><b>${item.count}</b>${PROMPT_RULES[item.key].label}</span>`).join("")}</div>
+    <ol>${hygiene.incidents.slice(0, limit).map((incident) => {
+      const exchange = capturedExchange(model, incident.event);
+      const incoming = readableCapture(exchange?.inputContext, readableCapture(exchange?.transformedPrompt, readableCapture(exchange?.prompt, incident.event.prompt)));
+      const outgoing = readableCapture(exchange?.response, "The complete output is not retained in the normalized historic timeline for this request.");
+      return `<li><details class="mux-prompt-case" data-prompt-event="${escapeHtml(incident.event.id)}" ${model.openPromptEventId === incident.event.id ? "open" : ""}><summary><span>${incident.rules.map((rule) => PROMPT_RULES[rule].label).join(" + ")}</span><b>${escapeHtml(incident.event.prompt.slice(0, 150))}</b><small>${escapeHtml(PROMPT_RULES[incident.rules[0]].advice)}</small><i aria-hidden="true">+</i></summary><div class="mux-prompt-exchange"><section><span>IN / LOCALLY AVAILABLE COACHING VIEW</span><pre>${escapeHtml(incoming)}</pre></section><section><span>OUT / LOCALLY AVAILABLE COACHING VIEW</span><pre>${escapeHtml(outgoing)}</pre></section>${exchange?.thinking ? `<section><span>REASONING</span><pre>${escapeHtml(readableCapture(exchange.thinking, ""))}</pre></section>` : ""}<button data-action="session" data-session="${escapeHtml(incident.event.sessionId)}" data-event="${escapeHtml(incident.event.id)}" data-jump="forensics">Open this actual request in FORENSICS ↓</button></div></details></li>`;
+    }).join("") || "<li class=\"is-empty\">The heuristic only sees locally captured excerpts and request proportions. It will stay quiet rather than invent a problem.</li>"}</ol>
+  </section>`;
+}
+
+function planningNavigator(model) {
+  return `<div class="mux-plan-nav"><div class="mux-view-month"><span>Viewed month</span><div>${model.months.map((item) => `<button data-action="view-month" data-month="${item}" class="${item === model.month ? "is-active" : ""}" aria-pressed="${item === model.month}">${formatMonth(item, true)}</button>`).join("")}</div></div><div class="mux-plan-units" role="group" aria-label="Usage unit">${[["credits", "Credits"], ["tokens", "Tokens"], ["dollars", "Money"]].map(([key, label]) => `<button data-action="unit" data-unit="${key}" class="${model.unit === key ? "is-active" : ""}" ${model.capabilities[key].available ? "" : `disabled title="${escapeHtml(model.capabilities[key].note)}"`}>${label}</button>`).join("")}</div></div>`;
+}
+
+function gardenChart(model, height = 520) {
+  const plan = monthPlanning(model);
+  const hygiene = promptHygiene(model);
+  const width = 1180;
+  const left = 46;
+  const right = 190;
+  const ground = height - 56;
+  const plotWidth = width - left - right;
+  const source = model.view.daily;
+  const peak = Math.max(1, ...source.map((day) => day.total), plan.scenarioVelocity, plan.sustainable);
+  const step = plotWidth / Math.max(1, source.length);
+  const latestDay = plan.latest ? Number(plan.latest.date.slice(-2)) : plan.elapsed;
+  const weedsByDay = Object.fromEntries(hygiene.incidents.map((incident) => [incident.event.day, (hygiene.incidents.filter((item) => item.event.day === incident.event.day).length)]));
+  const plants = source.map((day, index) => {
+    const dayNumber = index + 1;
+    const future = dayNumber > latestDay;
+    const value = future ? plan.scenarioVelocity : day.total;
+    const h = 14 + Math.sqrt(value / peak) * 180;
+    const x = left + step * (index + .5);
+    const color = ORIGIN_COLORS[dominantOrigin(day)] || "#6da86b";
+    const selected = day.day === model.selectedDay;
+    const weeds = weedsByDay[day.day] || 0;
+    return `<g class="mux-garden-plant ${future ? "is-future" : ""} ${selected ? "is-selected" : ""}" data-action="day" data-day="${day.day}"><path class="mux-garden-stem" d="M${x} ${ground} C${x - 5} ${ground - h * .45},${x + 7} ${ground - h * .72},${x} ${ground - h}" stroke="${color}"/><ellipse cx="${x - 7}" cy="${ground - h * .56}" rx="7" ry="3.5" fill="${color}" transform="rotate(-28 ${x - 7} ${ground - h * .56})"/><ellipse cx="${x + 7}" cy="${ground - h * .72}" rx="7" ry="3.5" fill="${color}" transform="rotate(28 ${x + 7} ${ground - h * .72})"/><circle cx="${x}" cy="${ground - h}" r="${3 + Math.sqrt(value / peak) * 9}" fill="${color}"/>${weeds ? `<path class="mux-garden-weed" d="M${x + 5} ${ground} q8 -14 13 -4 q-2 -16 9 -20"/><text x="${x + 24}" y="${ground - 22}">${weeds}</text>` : ""}<text x="${x}" y="${ground + 19}" text-anchor="middle">${String(dayNumber).padStart(2, "0")}</text><title>${day.day} · ${formatLabeledValue(day.total, model.unit)}${future ? ` · scenario ${formatLabeledValue(plan.scenarioVelocity, model.unit)} / day` : ""}</title></g>`;
+  }).join("");
+  const safeY = ground - (14 + Math.sqrt(Math.min(peak, plan.sustainable) / peak) * 180);
+  const readings = plan.readings.map((reading) => {
+    const index = Number(reading.date.slice(-2)) - 1;
+    const x = left + step * (index + .5);
+    return `<g class="mux-garden-rain"><path d="M${x} 36 C${x - 9} 49 ${x - 8} 59 ${x} 62 C${x + 8} 59 ${x + 9} 49 ${x} 36Z"/><text x="${x}" y="78" text-anchor="middle">${escapeHtml(formatValue(reading.value, model.unit, true))}</text></g>`;
+  }).join("");
+  return `<svg class="mux-garden-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="A usage garden: actual daily usage grows solid plants, simulated future usage grows outlined plants, and prompt-practice flags grow as weeds."><defs><pattern id="garden-soil" width="20" height="12" patternUnits="userSpaceOnUse"><path d="M0 6 Q5 1 10 6 T20 6" fill="none" stroke="currentColor" opacity=".12"/></pattern></defs><rect x="0" y="${ground}" width="${width}" height="${height - ground}" fill="url(#garden-soil)"/><path class="mux-garden-canopy" d="M${left} ${safeY} H${width - right}"/><text class="mux-garden-safe" x="${width - right + 8}" y="${safeY + 4}">SAFE DAILY CANOPY · ${escapeHtml(formatValue(plan.sustainable, model.unit, true))}</text>${readings}${plants}<g class="mux-garden-reservoir"><circle cx="${width - 92}" cy="${ground - 108}" r="67"/><path d="M${width - 151} ${ground - 108 + 58 * Math.max(-1, Math.min(1, plan.used / plan.target * 2 - 1))} A59 59 0 0 0 ${width - 33} ${ground - 108 + 58 * Math.max(-1, Math.min(1, plan.used / plan.target * 2 - 1))} L${width - 33} ${ground - 49} L${width - 151} ${ground - 49}Z"/><text x="${width - 92}" y="${ground - 117}" text-anchor="middle">${escapeHtml(formatValue(plan.used, model.unit, true))} / ${escapeHtml(formatValue(plan.target, model.unit, true))}</text><text x="${width - 92}" y="${ground - 96}" text-anchor="middle">${escapeHtml(unitLabel(model.unit).toUpperCase())}</text></g></svg>`;
+}
+
+function VariantF(model) {
+  return `<div class="mux mux-f">
+    <header class="mux-f-head"><div><span>SAXJAX / LIVING BUDGET</span><h1>Credit garden</h1><p>The month grows in front of you. Solid plants are history, outlined plants are your simulated future, and prompt smells surface as weeds.</p>${planningNavigator(model)}</div><div>${powerSwitch(model)}</div></header>
+    ${controlDeck(model)}
+    <main class="mux-f-layout"><section class="mux-f-garden"><header><span>${formatMonth(model.month)} · ${model.view.monthEvents.length} requests</span><h2>Will this pace outgrow the greenhouse?</h2><div>${legend(model)}</div></header>${gardenChart(model)}</section><aside class="mux-f-sidebar">${courseControls(model, "garden")}${manualReadingList(model, "garden")}</aside>${promptCoach(model, "garden", 6)}</main>
+    <footer class="mux-f-roots">${systemStrip(model, true)}${evidence(model, 8)}</footer>
+  </div>`;
+}
+
+function loomChart(model, height = 510) {
+  const plan = monthPlanning(model);
+  const hygiene = promptHygiene(model);
+  const width = 1180;
+  const left = 125;
+  const top = 54;
+  const origins = model.view.originTotals.map((item) => item.origin);
+  if (!origins.length) origins.push("other");
+  const rowHeight = (height - top - 55) / origins.length;
+  const column = (width - left - 24) / model.view.daily.length;
+  const peak = Math.max(1, ...model.view.daily.flatMap((day) => Object.values(day.byOrigin)));
+  const threads = model.view.daily.flatMap((day, dayIndex) => origins.map((origin, originIndex) => {
+    const value = day.byOrigin[origin] || 0;
+    const x = left + dayIndex * column;
+    const y = top + originIndex * rowHeight;
+    return `<rect class="mux-loom-weft ${day.day === model.selectedDay ? "is-selected" : ""}" data-action="day" data-day="${day.day}" x="${x}" y="${y + 4}" width="${Math.max(2, column - 1)}" height="${Math.max(4, rowHeight - 8)}" fill="${ORIGIN_COLORS[origin] || ORIGIN_COLORS.other}" opacity="${value ? (.12 + value / peak * .88).toFixed(2) : .035}"><title>${day.day} · ${ORIGIN_LABELS[origin] || origin} · ${formatLabeledValue(value, model.unit)}</title></rect>`;
+  })).join("");
+  const knots = hygiene.incidents.slice(0, 18).map((incident, index) => {
+    const dayIndex = Math.max(0, Number(incident.event.day.slice(-2)) - 1);
+    const originIndex = Math.max(0, origins.indexOf(incident.event.origin));
+    const x = left + (dayIndex + .5) * column;
+    const y = top + (originIndex + .5) * rowHeight;
+    return `<g class="mux-loom-knot" data-action="session" data-session="${escapeHtml(incident.event.sessionId)}"><circle cx="${x}" cy="${y}" r="${7 + Math.min(5, incident.rules.length * 2)}"/><text x="${x}" y="${y + 3}" text-anchor="middle">${index + 1}</text><title>${incident.rules.map((rule) => PROMPT_RULES[rule].label).join(", ")}</title></g>`;
+  }).join("");
+  const readings = plan.readings.map((reading) => {
+    const x = left + (Number(reading.date.slice(-2)) - .5) * column;
+    return `<g class="mux-loom-reading"><path d="M${x - 7} 11 H${x + 7} L${x} 31Z"/><line x1="${x}" y1="31" x2="${x}" y2="${height - 26}"/><text x="${x}" y="9" text-anchor="middle">${escapeHtml(formatValue(reading.value, model.unit, true))}</text></g>`;
+  }).join("");
+  return `<svg class="mux-loom-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Usage woven by source across days. Saturation is usage, numbered knots are possible prompt bad practices, and gold needles are manual GitHub readings."><g class="mux-loom-warp">${model.view.daily.map((day, index) => `<line x1="${left + (index + .5) * column}" y1="${top - 12}" x2="${left + (index + .5) * column}" y2="${height - 28}"/>`).join("")}</g>${threads}${origins.map((origin, index) => `<text x="${left - 12}" y="${top + (index + .5) * rowHeight + 4}" text-anchor="end">${escapeHtml(ORIGIN_LABELS[origin] || origin)}</text>`).join("")}${model.view.daily.map((day, index) => index % 2 === 0 ? `<text x="${left + (index + .5) * column}" y="${height - 8}" text-anchor="middle">${day.day.slice(-2)}</text>` : "").join("")}${readings}${knots}<g class="mux-loom-shuttle" transform="translate(${left + Math.min(model.view.daily.length - 1, plan.elapsed - 1) * column},${height - 23})"><path d="M0 0 h58 l13 8 -13 8 H0 l-13 -8Z"/><text x="29" y="11" text-anchor="middle">NOW</text></g></svg>`;
+}
+
+function VariantH(model) {
+  const plan = monthPlanning(model);
+  return `<div class="mux mux-h">
+    <header class="mux-h-head"><div><span>SAXJAX / MONTHLY TEXTILE</span><h1>The prompt loom</h1><p>Sources become coloured threads. Daily density becomes fabric. Bad prompt habits become literal knots you can open and untangle.</p>${planningNavigator(model)}</div><div class="mux-h-tension" data-course="${plan.state}"><span>TENSION</span><b>${plan.state === "over" ? "TOO TIGHT" : plan.state === "under" ? "LOOSE" : "BALANCED"}</b><small>${formatValue(plan.projection, model.unit, true)} projected / ${formatValue(plan.target, model.unit, true)} target</small></div>${powerSwitch(model)}</header>
+    <div class="mux-h-tools">${controlDeck(model)}</div>
+    <main class="mux-h-layout"><section class="mux-h-fabric"><header><div><span>${formatMonth(model.month)} / THREAD DENSITY</span><h2>Where did the month tighten?</h2></div>${legend(model)}</header>${loomChart(model)}</section><aside class="mux-h-bench">${manualReadingList(model, "loom")}${courseControls(model, "loom")}</aside>${promptCoach(model, "loom", 8)}<section class="mux-h-proof">${evidence(model, 10)}</section></main>
+  </div>`;
+}
+
+function boardPath(model) {
+  const plan = monthPlanning(model);
+  const hygiene = promptHygiene(model);
+  const peak = Math.max(1, ...model.view.daily.map((day) => day.total));
+  const trapDays = new Map();
+  for (const incident of hygiene.incidents) trapDays.set(incident.event.day, (trapDays.get(incident.event.day) || 0) + 1);
+  const readingDays = new Map(plan.readings.map((reading) => [reading.date, reading.value]));
+  const finishScale = Math.max(1, plan.baseBudget * 1.5, plan.target * 1.15, plan.projection * 1.05, plan.used * 1.05);
+  const finishPercent = (value) => Math.max(0, Math.min(100, value / finishScale * 100)).toFixed(2);
+  const finishStyle = `--spent:${finishPercent(plan.used)}%;--forecast:${finishPercent(plan.projection)}%;--goal-start:${finishPercent(plan.baseBudget * .95)}%;--goal-end:${finishPercent(plan.baseBudget * 1.05)}%;--base:${finishPercent(plan.baseBudget)}%;--approved:${finishPercent(plan.target)}%`;
+  const finishImpactLabel = plan.unapprovedOverrun > 0
+    ? plan.isFinal ? "UNAPPROVED DAMAGE" : "PROJECTED OVERRUN"
+    : plan.finishValue < plan.baseBudget
+      ? "LEFT UNUSED"
+      : plan.usedBooster
+        ? "BOOSTER COST"
+        : "DISTANCE FROM TARGET";
+  const finishImpactValue = plan.unapprovedOverrun > 0
+    ? formatValue(plan.unapprovedOverrun, model.unit, true)
+    : plan.finishValue < plan.baseBudget
+      ? formatValue(plan.baseBudget - plan.finishValue, model.unit, true)
+      : plan.usedBooster
+        ? `−${plan.boosterPenalty} points`
+        : formatValue(Math.abs(plan.originalDifference), model.unit, true);
+  const accuracyExplanation = `${plan.isFinal ? "Final cost" : "Your velocity forecast"} lands ${formatValue(Math.abs(plan.originalDifference), model.unit, true)} from the original ${formatValue(plan.baseBudget, model.unit, true)} mission. Start at 100; lose one point for every 1% away.`;
+  const boosterExplanation = plan.boosterPenalty
+    ? `${plan.additions.length} approved booster${plan.additions.length === 1 ? "" : "s"} kept the extra spend legal, but rescue money costs ${plan.boosterPenalty} points.`
+    : "No approved boosters are propping up this run, so nothing is deducted here.";
+  const overrunExplanation = plan.overrunPenalty
+    ? `${plan.isFinal ? "The final cost crossed" : "Your forecast crosses"} the total approved line by ${formatValue(plan.unapprovedOverrun, model.unit, true)}, costing ${plan.overrunPenalty} points.`
+    : `${plan.isFinal ? "The final cost stayed" : "Your forecast stays"} inside the total approved budget, so there is no illegal-overspend penalty.`;
+  return `<div class="mux-board" role="img" aria-label="A month board game. Each square is a day, colour is usage intensity, traps are possible prompt bad practices, and flags are manual GitHub readings.">${model.view.daily.map((day, index) => {
+    const row = Math.floor(index / 7);
+    const naturalColumn = index % 7;
+    const column = row % 2 ? 7 - naturalColumn : naturalColumn + 1;
+    const traps = trapDays.get(day.day) || 0;
+    const reading = readingDays.get(day.day);
+    const isNow = index + 1 === plan.elapsed;
+    return `<button class="mux-board-space ${day.day === model.selectedDay ? "is-selected" : ""} ${isNow ? "is-now" : ""}" data-action="day" data-day="${day.day}" style="grid-column:${column};grid-row:${row + 1};--heat:${16 + day.total / peak * 64}%;--space:${ORIGIN_COLORS[dominantOrigin(day)] || ORIGIN_COLORS.other}"><span>DAY ${String(index + 1).padStart(2, "0")}</span><b>${formatValue(day.total, model.unit, true)}</b><small>${day.events.length} requests</small>${traps ? `<i class="mux-board-trap">${traps}<em>prompt trap${traps === 1 ? "" : "s"}</em></i>` : ""}${reading != null ? `<i class="mux-board-flag">PROVIDER<br><b>${formatValue(reading, model.unit, true)}</b></i>` : ""}${isNow ? `<i class="mux-board-player">YOU</i>` : ""}</button>`;
+  }).join("")}<div class="mux-board-finish" data-finish="${plan.performanceTone}" data-climate="${plan.paceClimate}" data-trend="${plan.velocityTrend}" style="${finishStyle}"><i class="mux-finish-weather" aria-hidden="true"></i><section class="mux-finish-drama"><span>${escapeHtml(plan.dramaEyebrow)}</span><h3>${escapeHtml(plan.dramaTitle)}</h3><p>${escapeHtml(plan.dramaQuip)}</p><strong>${escapeHtml(plan.paceStory)}</strong></section><section class="mux-finish-score"><span>${plan.isFinal ? "FINAL VERDICT" : "PACE VERDICT"}: ${escapeHtml(plan.ratingVerdict)}</span><b>${plan.ratingScore}<small>/100</small></b><em>GRADE ${plan.ratingGrade}</em><small>${escapeHtml(plan.ratingBasis)}</small></section><div class="mux-finish-facts"><span><small>ORIGINAL BUDGET</small><b>${formatValue(plan.baseBudget, model.unit, true)}</b></span><span><small>TOTAL APPROVED</small><b>${formatValue(plan.target, model.unit, true)}</b></span><span><small>SPENT SO FAR</small><b>${formatValue(plan.used, model.unit, true)}</b></span><span><small>${plan.isFinal ? "FINAL MONTH COST" : "IF THIS PACE CONTINUES"}</small><b>${formatValue(plan.projection, model.unit, true)}</b></span><span><small>${finishImpactLabel}</small><b>${finishImpactValue}</b></span></div><div class="mux-finish-legend"><span class="is-good">GOLD ZONE = finish within 5% of original budget</span><span class="is-booster">BOOSTER ZONE = approved overspend, but it costs points</span></div><div class="mux-finish-track" aria-label="Spent so far and velocity forecast compared with original and approved budgets"><i class="mux-finish-approved" aria-hidden="true"></i><i class="mux-finish-goal" aria-hidden="true"></i><i class="mux-finish-target"><span>GOLD MISSION</span><b>${formatValue(plan.baseBudget, model.unit, true)}</b><em>FINISH HERE</em></i><b class="mux-finish-spent">SPENT · ${formatValue(plan.used, model.unit, true)}</b><b class="mux-finish-marker">${plan.isFinal ? "FINAL" : "PACE FORECAST"} · ${formatValue(plan.projection, model.unit, true)}</b></div><div class="mux-finish-math"><header><span>WHY THIS SCORE?</span><b>${plan.ratingScore}/100</b></header><section><article><b>${plan.accuracyScore}</b><span><strong>BUDGET AIM</strong><small>${escapeHtml(accuracyExplanation)}</small></span></article><article><b>−${plan.boosterPenalty}</b><span><strong>BOOSTER COST</strong><small>${escapeHtml(boosterExplanation)}</small></span></article><article><b>−${plan.overrunPenalty}</b><span><strong>UNAPPROVED OVERSPEND</strong><small>${escapeHtml(overrunExplanation)}</small></span></article></section><footer>${plan.accuracyScore} budget aim − ${plan.boosterPenalty} booster − ${plan.overrunPenalty} unapproved overspend = <b>${plan.ratingScore}/100</b><small>${escapeHtml(plan.ratingBasisDetail)}</small></footer></div>${plan.efficiencySignal ? `<div class="mux-finish-efficiency"><b>CHEAPER MACHINERY?</b><span>Recent ${unitLabel(model.unit)} per request fell ${plan.efficiencySignal.percent}%. Something changed in the setup or prompting—open FORENSICS and verify what.</span></div>` : ""}${plan.usedBooster ? `<strong class="mux-finish-booster">⚡ BOOSTER ×${plan.additions.length} USED</strong>` : ""}</div></div>`;
+}
+
+function VariantI(model) {
+  const plan = monthPlanning(model);
+  return `<div class="mux mux-i">
+    <header class="mux-i-head"><div><span>SAXJAX / PLAYABLE FORECAST</span><h1>Run the month</h1><p>Your AI usage is a board, not a bill. Move day by day, spot prompt traps, punch in provider checkpoints, and change speed before the finish.</p>${planningNavigator(model)}</div><div class="mux-i-score" data-climate="${plan.paceClimate}"><span>MONTH ${unitLabel(model.unit).toUpperCase()}</span><section><small>SPENT SO FAR</small><b>${formatValue(plan.used, model.unit, true)}</b></section><section><small>${plan.isFinal ? "FINAL MONTH COST" : "IF THIS PACE CONTINUES"}</small><b>${formatValue(plan.projection, model.unit, true)}</b></section><footer>${plan.isFinal ? "MONTH CLOSED" : `${plan.remainingDays} days left · ${formatValue(plan.velocity, model.unit, true)}/day`}</footer></div>${powerSwitch(model)}</header>
+    ${controlDeck(model)}
+    <main class="mux-i-layout"><section class="mux-i-game"><header><div><span>${formatMonth(model.month)} / CURRENT + HISTORIC ${unitLabel(model.unit).toUpperCase()}</span><h2>${plan.isFinal ? "FINAL" : "PACE"} VERDICT: ${escapeHtml(plan.ratingVerdict)} · ${plan.ratingScore}/100</h2><p>${escapeHtml(plan.ratingBasisDetail)}</p></div><div class="mux-i-forecast" data-climate="${plan.paceClimate}"><span><small>SPENT SO FAR</small><b>${formatValue(plan.used, model.unit, true)}</b></span><span><small>${plan.isFinal ? "FINAL MONTH COST" : "IF THIS PACE CONTINUES"}</small><b>${formatValue(plan.projection, model.unit, true)}</b></span><footer>${escapeHtml(plan.trendLabel)} · ${formatValue(plan.scenarioVelocity, model.unit, true)}/day</footer></div></header>${boardPath(model)}</section><aside class="mux-i-referee">${courseControls(model, "board")}${manualReadingList(model, "board")}</aside>${promptCoach(model, "board", 7)}<section class="mux-i-evidence"><header class="mux-i-forensics-title"><span>ACTUAL MACHINE RECORDS</span><h2>FORENSICS</h2><p>Open the real request papers: complete locally retained IN, OUT, reasoning, tools, and source records.</p></header>${evidence(model, 10)}</section></main>
   </div>`;
 }
 
@@ -1087,6 +1546,8 @@ async function startMonitorPrototype() {
   let selectedDay = params.get("day");
   let selectedSlotId = params.get("slot");
   let selectedSessionId = params.get("session");
+  let selectedEvidenceEventId = params.get("request");
+  let openPromptEventId = params.get("prompt");
   let zoom = ["month", "day", "slot", "session"].includes(params.get("zoom")) ? params.get("zoom") : "month";
   let anomalyMode = ["value", "jump", "unusual"].includes(params.get("anomaly")) ? params.get("anomaly") : "value";
   let threshold = Math.max(0, Number(params.get("threshold")) || 0);
@@ -1100,6 +1561,18 @@ async function startMonitorPrototype() {
   };
   let powerPending = false;
   let powerError = "";
+  let manualReadings = [];
+  let manualReadingDate = new Date().toISOString().slice(0, 10);
+  const forecastTokenTotal = Number(liveState.copilot?.forecast?.inputTokens || 0) + Number(liveState.copilot?.forecast?.outputTokens || 0);
+  const initialTokenTarget = Math.max(1, Math.ceil(Math.max(forecastTokenTotal, Number(liveState.copilot?.observedInputTokens || 0) + Number(liveState.copilot?.observedOutputTokens || 0)) / 10_000) * 10_000);
+  let baseBudgets = {
+    credits: 20_000,
+    dollars: 200,
+    tokens: initialTokenTarget,
+  };
+  let budgetAdditions = [];
+  let budgetAdditionDate = new Date().toISOString().slice(0, 10);
+  let paceScenario = 100;
   const liveSamples = [];
   let feedbackLab;
 
@@ -1146,22 +1619,44 @@ async function startMonitorPrototype() {
     if (!view.slots.some((slot) => slot.id === selectedSlotId)) selectedSlotId = view.peakSlot.id;
     if (!view.days.includes(selectedDay)) selectedDay = view.slots.find((slot) => slot.id === selectedSlotId)?.day || view.peakDay.day;
     if (selectedSessionId && !view.monthEvents.some((event) => event.sessionId === selectedSessionId)) selectedSessionId = null;
+    if (selectedEvidenceEventId && !view.monthEvents.some((event) => event.id === selectedEvidenceEventId)) selectedEvidenceEventId = null;
     const providers = [...new Set(events.map((event) => event.provider))].sort();
     const origins = [...new Set(events.map((event) => event.origin))].sort();
     const models = [...new Set(events.map((event) => event.model))].sort();
     const providerLabels = Object.fromEntries(providers.map((provider) => [provider, PROVIDER_RULES[provider]?.label || provider]));
     const billingReads = capabilities.providers.length > 0 && capabilities.providers.every((provider) => PROVIDER_RULES[provider]?.billingReads === true);
     return {
-      variant, customMode, unit, month, months, referenceMonth, view, referenceView, selectedDay, selectedSlotId, selectedSessionId, zoom, anomalyMode, threshold, sortDirection, controlsOpen,
+      variant, customMode, unit, month, months, referenceMonth, view, referenceView, selectedDay, selectedSlotId, selectedSessionId, selectedEvidenceEventId, openPromptEventId, zoom, anomalyMode, threshold, sortDirection, controlsOpen,
       filters, filteredEvents, capabilities, billingReads, copilot: liveState.copilot || {}, system: systemView(liveState), liveSamples, powerPending, powerError,
+      manualReadings, manualReadingDate, baseBudgets, budgetAdditions, budgetAdditionDate, paceScenario, traffic: [...(liveState.history || []), ...(liveState.active || [])],
       options: { providers, origins, models, providerLabels },
     };
   }
 
   function render() {
+    const openPaper = root.querySelector(".mux-evidence-paper[open]");
+    const openPaperTop = openPaper?.getBoundingClientRect().top;
+    const openSheet = openPaper?.querySelector(".mux-evidence-sheet");
+    const evidenceSnapshot = openPaper && openSheet?.dataset.loaded === "true" ? {
+      eventId: openPaper.dataset.eventId,
+      input: openSheet.querySelector("[data-paper-input]")?.textContent || "",
+      output: openSheet.querySelector("[data-paper-output]")?.textContent || "",
+      reasoning: openSheet.querySelector("[data-paper-reasoning]")?.textContent || "",
+      status: openSheet.querySelector("[data-paper-status]")?.textContent || "Actual local journal loaded",
+    } : null;
+    const scrollSnapshot = { x: window.scrollX, y: window.scrollY };
+    const activeField = root.contains(document.activeElement) && document.activeElement.matches("input, textarea, select") ? document.activeElement : null;
+    const focusSnapshot = activeField ? {
+      formAction: activeField.closest("form[data-action]")?.dataset.action || null,
+      name: activeField.getAttribute("name"),
+      dataAction: activeField.dataset.action || null,
+      value: activeField.value,
+      selectionStart: activeField.selectionStart,
+      selectionEnd: activeField.selectionEnd,
+    } : null;
     const current = model();
     syncUrl();
-    const views = { A: VariantA, B: VariantB, C: VariantC, D: VariantD, E: VariantE };
+    const views = { A: VariantA, B: VariantB, C: VariantC, D: VariantD, E: VariantE, F: VariantF, H: VariantH, I: VariantI };
     parkClassic();
     root.className = `monitor-ux-root ${customMode ? "variant-custom" : variant === "A0" ? "variant-a0-native" : `variant-${variant.toLowerCase()}`}`;
     const browserLabEntry = labEnabled ? "" : `<a class="mux-lab-entry" href="/monitor/?prototype=monitor&view=preferred">Prototype lab</a>`;
@@ -1172,9 +1667,47 @@ async function startMonitorPrototype() {
       const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
       root.innerHTML = `${view}${browserLabEntry}`;
     }
+    let replacementPaper = null;
+    if (evidenceSnapshot) {
+      replacementPaper = [...root.querySelectorAll(".mux-evidence-paper")].find((paper) => paper.dataset.eventId === evidenceSnapshot.eventId) || null;
+      const replacementSheet = replacementPaper?.querySelector(".mux-evidence-sheet");
+      if (replacementSheet) {
+        replacementSheet.dataset.loaded = "true";
+        const input = replacementSheet.querySelector("[data-paper-input]");
+        const output = replacementSheet.querySelector("[data-paper-output]");
+        const reasoning = replacementSheet.querySelector("[data-paper-reasoning]");
+        const status = replacementSheet.querySelector("[data-paper-status]");
+        if (input) input.textContent = evidenceSnapshot.input;
+        if (output) output.textContent = evidenceSnapshot.output;
+        if (status) status.textContent = evidenceSnapshot.status;
+        if (reasoning && evidenceSnapshot.reasoning) {
+          reasoning.textContent = evidenceSnapshot.reasoning;
+          reasoning.closest("section").hidden = false;
+        }
+      }
+    }
     document.title = customMode ? "My mixed monitor — Saxjax" : `${variant} — ${VARIANTS[variant]} — Saxjax ${labEnabled ? "prototype" : "Monitor"}`;
     bind();
     feedbackLab?.decorate();
+    if (replacementPaper && Number.isFinite(openPaperTop)) {
+      const replacementTop = replacementPaper.getBoundingClientRect().top;
+      window.scrollBy(0, replacementTop - openPaperTop);
+    } else {
+      window.scrollTo(scrollSnapshot.x, scrollSnapshot.y);
+    }
+    if (focusSnapshot) {
+      const selector = focusSnapshot.formAction && focusSnapshot.name
+        ? `form[data-action="${focusSnapshot.formAction}"] [name="${focusSnapshot.name}"]`
+        : focusSnapshot.dataAction ? `[data-action="${focusSnapshot.dataAction}"]` : null;
+      const replacement = selector ? root.querySelector(selector) : null;
+      if (replacement) {
+        replacement.value = focusSnapshot.value;
+        replacement.focus({ preventScroll: true });
+        if (focusSnapshot.selectionStart != null && typeof replacement.setSelectionRange === "function") {
+          replacement.setSelectionRange(focusSnapshot.selectionStart, focusSnapshot.selectionEnd);
+        }
+      }
+    }
   }
 
   function syncUrl() {
@@ -1188,6 +1721,8 @@ async function startMonitorPrototype() {
     params.set("slot", selectedSlotId);
     if (referenceMonth) params.set("reference", referenceMonth); else params.delete("reference");
     if (selectedSessionId) params.set("session", selectedSessionId); else params.delete("session");
+    if (selectedEvidenceEventId) params.set("request", selectedEvidenceEventId); else params.delete("request");
+    if (openPromptEventId) params.set("prompt", openPromptEventId); else params.delete("prompt");
     params.set("zoom", zoom);
     params.set("anomaly", anomalyMode);
     if (sortDirection === "asc") params.set("sort", "asc"); else params.delete("sort");
@@ -1217,6 +1752,7 @@ async function startMonitorPrototype() {
     selectedSlotId = next.id;
     selectedDay = next.day;
     selectedSessionId = null;
+    selectedEvidenceEventId = null;
     zoom = "slot";
     feedbackLab?.track("navigation.timeline-keyboard", "inspection-scale");
     syncUrl();
@@ -1225,19 +1761,172 @@ async function startMonitorPrototype() {
   }
 
   function bind() {
+    const keepOneOpen = (details, selector) => {
+      if (!details.open) return;
+      root.querySelectorAll(selector).forEach((other) => { if (other !== details) other.open = false; });
+    };
+    const revealEvidencePaper = (details) => requestAnimationFrame(() => {
+      if (!details?.open) return;
+      const list = details.closest(".mux-evidence-list");
+      if (!list) return;
+      const listBox = list.getBoundingClientRect();
+      const paperBox = details.getBoundingClientRect();
+      list.scrollTop = Math.max(0, list.scrollTop + paperBox.top - listBox.top - 12);
+    });
+    const hydrateEvidencePaper = async (details) => {
+      const sheet = details.querySelector(".mux-evidence-sheet");
+      if (!sheet || sheet.dataset.loaded === "true" || sheet.dataset.loading === "true") return;
+      const status = sheet.querySelector("[data-paper-status]");
+      if (!details.dataset.captureClient || !details.dataset.captureSession || !details.dataset.captureRequest) {
+        if (status) status.textContent = "Full journal identity is unavailable; showing the durable excerpt.";
+        sheet.dataset.loaded = "true";
+        return;
+      }
+      sheet.dataset.loading = "true";
+      if (status) status.textContent = "Opening the original local request journal…";
+      try {
+        const query = new URLSearchParams({ client: details.dataset.captureClient, session: details.dataset.captureSession, request: details.dataset.captureRequest });
+        const response = await fetch(`/monitor/api/request-capture?${query}`, { cache: "no-store" });
+        const capture = await response.json();
+        if (!response.ok) throw new Error(capture.error || `HTTP ${response.status}`);
+        const input = sheet.querySelector("[data-paper-input]");
+        const output = sheet.querySelector("[data-paper-output]");
+        const reasoning = sheet.querySelector("[data-paper-reasoning]");
+        if (input) input.textContent = capture.input || capture.submitted || "No locally retained input content.";
+        if (output) output.textContent = capture.output || "No locally retained output content.";
+        if (reasoning && capture.reasoning) {
+          reasoning.textContent = capture.reasoning;
+          reasoning.closest("section").hidden = false;
+        }
+        if (status) status.textContent = `Original local journal loaded · ${capture.inputStatus || "captured"}`;
+        sheet.dataset.loaded = "true";
+      } catch (error) {
+        if (status) status.textContent = `${error.message}. The durable excerpt remains visible.`;
+      } finally {
+        delete sheet.dataset.loading;
+        revealEvidencePaper(details);
+      }
+    };
+    const releaseEvidencePaper = (details) => {
+      if (details.dataset.inlineCapture === "true") return;
+      const sheet = details.querySelector(".mux-evidence-sheet");
+      if (!sheet) return;
+      const input = sheet.querySelector("[data-paper-input]");
+      const output = sheet.querySelector("[data-paper-output]");
+      const reasoning = sheet.querySelector("[data-paper-reasoning]");
+      const status = sheet.querySelector("[data-paper-status]");
+      if (input) input.textContent = details.dataset.paperPreview || "Durable request excerpt unavailable.";
+      if (output) output.textContent = details.dataset.captureRequest ? "Open the paper to load the complete output…" : "The complete output is not retained in this timeline record.";
+      if (reasoning) {
+        reasoning.textContent = "";
+        reasoning.closest("section").hidden = true;
+      }
+      if (status) status.textContent = details.dataset.captureRequest ? "Open FORENSICS to read the original local journal" : "Only the durable timeline excerpt is available";
+      sheet.dataset.loaded = "false";
+    };
+    root.querySelectorAll(".mux-prompt-case").forEach((details) => details.addEventListener("toggle", () => {
+      if (details.open) {
+        openPromptEventId = details.dataset.promptEvent || null;
+        keepOneOpen(details, ".mux-prompt-case");
+      } else if (openPromptEventId === details.dataset.promptEvent) {
+        openPromptEventId = null;
+      }
+      syncUrl();
+    }));
+    root.querySelectorAll(".mux-evidence-paper").forEach((details) => {
+      details.addEventListener("toggle", () => {
+        if (details.open) {
+          selectedEvidenceEventId = details.dataset.eventId || null;
+          syncUrl();
+          keepOneOpen(details, ".mux-evidence-paper");
+          void hydrateEvidencePaper(details);
+        } else {
+          if (selectedEvidenceEventId === details.dataset.eventId) {
+            selectedEvidenceEventId = null;
+            syncUrl();
+          }
+          releaseEvidencePaper(details);
+        }
+      });
+      if (details.open) void hydrateEvidencePaper(details);
+    });
     root.querySelectorAll('[data-action="controls-toggle"]').forEach((button) => button.addEventListener("click", () => { controlsOpen = !controlsOpen; render(); }));
-    root.querySelectorAll('[data-action="unit"]').forEach((button) => button.addEventListener("click", () => { unit = button.dataset.unit; selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="month"]').forEach((select) => select.addEventListener("change", () => { month = select.value; if (referenceMonth === month) referenceMonth = null; selectedDay = null; selectedSlotId = null; selectedSessionId = null; zoom = "month"; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="day"]').forEach((element) => element.addEventListener("click", () => { selectedDay = element.dataset.day; const daySlots = model().view.slots.filter((slot) => slot.day === selectedDay); selectedSlotId = daySlots.reduce((peak, slot) => slot.total > peak.total ? slot : peak, daySlots[0]).id; selectedSessionId = null; zoom = "day"; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="slot"]').forEach((element) => element.addEventListener("click", (event) => { event.stopPropagation(); selectedSlotId = element.dataset.slot; selectedDay = selectedSlotId.slice(0, 10); selectedSessionId = null; zoom = "slot"; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="session"]').forEach((element) => element.addEventListener("click", () => { selectedSessionId = element.dataset.session; const first = model().view.monthEvents.find((event) => event.sessionId === selectedSessionId); if (first) { selectedDay = first.day; selectedSlotId = `${first.day}:${first.bucket}`; } zoom = "session"; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="filter"]').forEach((select) => select.addEventListener("change", () => { filters[select.dataset.filter] = select.value; selectedDay = null; selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="search"]').forEach((input) => input.addEventListener("change", () => { filters.search = input.value; selectedDay = null; selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="unit"]').forEach((button) => button.addEventListener("click", () => { unit = button.dataset.unit; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="month"]').forEach((select) => select.addEventListener("change", () => { month = select.value; if (referenceMonth === month) referenceMonth = null; selectedDay = null; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; zoom = "month"; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="view-month"]').forEach((button) => button.addEventListener("click", () => { month = button.dataset.month; if (referenceMonth === month) referenceMonth = null; selectedDay = null; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; zoom = "month"; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="day"]').forEach((element) => element.addEventListener("click", () => { selectedDay = element.dataset.day; const daySlots = model().view.slots.filter((slot) => slot.day === selectedDay); selectedSlotId = daySlots.reduce((peak, slot) => slot.total > peak.total ? slot : peak, daySlots[0]).id; selectedSessionId = null; selectedEvidenceEventId = null; zoom = "day"; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="slot"]').forEach((element) => element.addEventListener("click", (event) => { event.stopPropagation(); selectedSlotId = element.dataset.slot; selectedDay = selectedSlotId.slice(0, 10); selectedSessionId = null; selectedEvidenceEventId = null; zoom = "slot"; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="session"]').forEach((element) => element.addEventListener("click", () => {
+      const jumpToForensics = element.dataset.jump === "forensics";
+      selectedSessionId = element.dataset.session;
+      selectedEvidenceEventId = element.dataset.event || null;
+      const first = model().view.monthEvents.find((event) => event.sessionId === selectedSessionId);
+      if (first) { selectedDay = first.day; selectedSlotId = `${first.day}:${first.bucket}`; }
+      zoom = "session";
+      syncUrl();
+      render();
+      if (jumpToForensics) requestAnimationFrame(() => {
+        const section = root.querySelector("#mux-forensics");
+        const paper = root.querySelector(".mux-evidence-paper[open]");
+        section?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (!paper) return;
+        const revealPaper = () => {
+          revealEvidencePaper(paper);
+        };
+        requestAnimationFrame(revealPaper);
+        setTimeout(revealPaper, 240);
+      });
+    }));
+    root.querySelectorAll('[data-action="filter"]').forEach((select) => select.addEventListener("change", () => { filters[select.dataset.filter] = select.value; selectedDay = null; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="search"]').forEach((input) => input.addEventListener("change", () => { filters.search = input.value; selectedDay = null; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; syncUrl(); render(); }));
     root.querySelectorAll('[data-action="reference"]').forEach((button) => button.addEventListener("click", () => { referenceMonth = referenceMonth === button.dataset.month ? null : button.dataset.month; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="anomaly"]').forEach((button) => button.addEventListener("click", () => { anomalyMode = button.dataset.mode; selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="threshold"]').forEach((input) => input.addEventListener("change", () => { threshold = Math.max(0, Number(input.value) || 0); selectedSlotId = null; selectedSessionId = null; syncUrl(); render(); }));
-    root.querySelectorAll('[data-action="zoom"]').forEach((button) => button.addEventListener("click", () => { zoom = button.dataset.zoom; if (zoom !== "session") selectedSessionId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="reference-select"]').forEach((select) => select.addEventListener("change", () => { referenceMonth = select.value || null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="anomaly"]').forEach((button) => button.addEventListener("click", () => { anomalyMode = button.dataset.mode; selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="threshold"]').forEach((input) => input.addEventListener("change", () => { threshold = Math.max(0, Number(input.value) || 0); selectedSlotId = null; selectedSessionId = null; selectedEvidenceEventId = null; syncUrl(); render(); }));
+    root.querySelectorAll('[data-action="zoom"]').forEach((button) => button.addEventListener("click", () => { zoom = button.dataset.zoom; if (zoom !== "session") { selectedSessionId = null; selectedEvidenceEventId = null; } syncUrl(); render(); }));
     root.querySelectorAll('[data-action="sort"]').forEach((button) => button.addEventListener("click", () => { sortDirection = globalThis.SaxjaxDateTimeSort.normalize(button.dataset.sort); syncUrl(); render(); window.dispatchEvent(new CustomEvent("saxjax-date-sort-change", { detail: { direction: sortDirection } })); }));
+    root.querySelectorAll('form[data-action="manual-reading"]').forEach((form) => form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const date = String(data.get("date") || "");
+      const value = Number(data.get("reading"));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(value) || value < 0) return;
+      manualReadingDate = date;
+      const id = `${unit}:${date}:${Date.now()}`;
+      manualReadings = [...manualReadings.filter((reading) => reading.date !== date || reading.unit !== unit), { id, date, unit, value }];
+      feedbackLab?.track("planning.github-reading", "manual-github-readings");
+      render();
+    }));
+    root.querySelectorAll('[data-action="remove-reading"]').forEach((button) => button.addEventListener("click", () => {
+      manualReadings = manualReadings.filter((reading) => reading.id !== button.dataset.readingId);
+      feedbackLab?.track("planning.github-reading-remove", "manual-github-readings");
+      render();
+    }));
+    root.querySelectorAll('[data-action="base-budget"]').forEach((input) => input.addEventListener("change", () => {
+      baseBudgets = { ...baseBudgets, [unit]: Math.max(unit === "dollars" ? .01 : 1, Number(input.value) || 1) };
+      feedbackLab?.track("planning.base-budget", "course-control");
+      render();
+    }));
+    root.querySelectorAll('form[data-action="budget-addition"]').forEach((form) => form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const date = String(data.get("date") || "");
+      const value = Number(data.get("amount"));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(value) || value <= 0) return;
+      budgetAdditionDate = date;
+      budgetAdditions = [...budgetAdditions, { id: `${unit}:${date}:${Date.now()}`, month, date, unit, value }];
+      feedbackLab?.track("planning.budget-addition", "course-control");
+      render();
+    }));
+    root.querySelectorAll('[data-action="remove-budget-addition"]').forEach((button) => button.addEventListener("click", () => {
+      budgetAdditions = budgetAdditions.filter((addition) => addition.id !== button.dataset.budgetAdditionId);
+      feedbackLab?.track("planning.budget-addition-remove", "course-control");
+      render();
+    }));
+    root.querySelectorAll('[data-action="pace-scenario"]').forEach((input) => input.addEventListener("input", () => {
+      paceScenario = Math.max(20, Math.min(180, Number(input.value) || 100));
+      render();
+    }));
     root.querySelectorAll('[data-action="layout-studio"]').forEach((button) => button.addEventListener("click", () => {
       if (feedbackLab) feedbackLab.openStudio();
       else location.assign("/monitor/?prototype=monitor&view=preferred&studio=layout");
@@ -1266,6 +1955,12 @@ async function startMonitorPrototype() {
       if (!source) return;
       await navigator.clipboard?.writeText(source);
       button.textContent = "Source copied";
+    }));
+    root.querySelectorAll('[data-action="close-forensics"]').forEach((button) => button.addEventListener("click", () => {
+      const details = button.closest(".mux-evidence-paper");
+      if (!details) return;
+      details.open = false;
+      details.querySelector("summary")?.scrollIntoView({ block: "center" });
     }));
     root.querySelectorAll("[data-timeline-keyboard]").forEach((element) => element.addEventListener("keydown", (event) => { if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return; event.preventDefault(); moveSlot(event.key); }));
   }

@@ -3,7 +3,42 @@ import { appendFile, mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/p
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createCopilotCapture, normalizeVsCodeRequest } from "./copilot-capture.mjs";
+import { createCopilotCapture, loadCopilotCaptureHistory, normalizeVsCodeRequest, parseVsCodeChatJournal, parseVsCodeChatJournalFile, vsCodeRequestId } from "./copilot-capture.mjs";
+
+test("loads only the newest unique records from append-only capture history", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "copilot-history-"));
+  const logPath = path.join(root, "copilot-traffic.jsonl");
+  const records = ["one", "two", "three", "four", "five", "three"].map((id, index) => ({
+    id,
+    prompt: `version ${index}`,
+    status: "complete",
+  }));
+  await writeFile(logPath, `${records.map(JSON.stringify).join("\n")}\n`);
+  const history = await loadCopilotCaptureHistory(logPath, 3);
+  assert.deepEqual(history.map((item) => item.id), ["three", "five", "four"]);
+  assert.equal(history[0].prompt, "version 5");
+});
+
+test("identifies an existing VS Code request without reconstructing its context", () => {
+  const request = { requestId: "request-1", timestamp: 1 };
+  assert.equal(vsCodeRequestId("vscode-insiders", "chat-1", request), "vscode-insiders-chat-1-request-1");
+  assert.equal(
+    vsCodeRequestId("vscode-insiders", "chat-1", request),
+    normalizeVsCodeRequest("vscode-insiders", "chat-1", request).id,
+  );
+});
+
+test("streaming journal parsing preserves patch semantics", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "vscode-journal-stream-"));
+  const journal = path.join(root, "chat.jsonl");
+  const contents = [
+    { kind: 0, v: { sessionId: "chat-1", requests: [] } },
+    { kind: 2, k: ["requests"], v: [{ requestId: "request-1", response: [] }] },
+    { kind: 2, k: ["requests", 0, "response"], v: [{ value: "complete" }] },
+  ].map(JSON.stringify).join("\n") + "\n";
+  await writeFile(journal, contents);
+  assert.deepEqual(await parseVsCodeChatJournalFile(journal), parseVsCodeChatJournal(contents));
+});
 
 test("reconstructs all locally recorded VS Code context when a rendered global context is unavailable", () => {
   const previous = {
@@ -40,6 +75,41 @@ test("reconstructs all locally recorded VS Code context when a rendered global c
   assert.match(item.prompt, /summarized prior context/);
   assert.match(item.prompt, /full code block context/);
   assert.match(item.prompt, /tool result context/);
+});
+
+test("captures one update when VS Code repeats a journal across workspaces", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "vscode-capture-deduplicate-"));
+  const dataDir = path.join(root, "data");
+  const workspaceRoot = path.join(root, "workspaceStorage");
+  const directories = ["workspace-1", "workspace-2"].map((workspace) =>
+    path.join(workspaceRoot, workspace, "chatSessions")
+  );
+  await Promise.all(directories.map((directory) => mkdir(directory, { recursive: true })));
+  const emptyJournal = `${JSON.stringify({ kind: 0, v: { sessionId: "chat-1", requests: [] } })}\n`;
+  const journals = directories.map((directory) => path.join(directory, "chat-1.jsonl"));
+  await Promise.all(journals.map((journal) => writeFile(journal, emptyJournal)));
+
+  const changes = [];
+  const capture = await createCopilotCapture({
+    dataDir,
+    sessionsRoot: path.join(root, "missing-cli"),
+    vscodeRoots: [{ edition: "vscode", root: workspaceRoot }],
+    pollMs: 60_000,
+    onChange: (...args) => changes.push(args),
+  });
+  const requestPatch = `${JSON.stringify({ kind: 2, k: ["requests"], v: [{
+    requestId: "request-1",
+    timestamp: Date.now() + 10,
+    message: { text: "one update" },
+    response: [],
+  }] })}\n`;
+  await appendFile(journals[0], requestPatch);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await appendFile(journals[1], requestPatch);
+  await capture.poll();
+
+  assert.deepEqual(changes.map(([type]) => type), ["started"]);
+  capture.close();
 });
 
 test("captures only new Copilot CLI turns and clears its private local copy", async () => {

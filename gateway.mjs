@@ -10,13 +10,14 @@ import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createCopilotUsageMonitor } from "./copilot-usage.mjs";
-import { createCopilotCapture } from "./copilot-capture.mjs";
+import { createCopilotCapture, readVsCodeRequestCapture } from "./copilot-capture.mjs";
 import { createUsageTimelineStore } from "./usage-timeline-store.mjs";
 import { createPrototypeFeedbackStore } from "./prototype-feedback-store.mjs";
 import { createVsCodeInsidersImporter } from "./vscode-insiders-importer.mjs";
 import { captureCounters, captureSnapshot, combineCaptureState, finishCaptureRecord, normalizeCaptureRecord } from "./capture-core.mjs";
 import { forecastCopilotUsage, summarizeCopilotTokens } from "./copilot-forecast.mjs";
 import { preferredMonitorLocation } from "./monitor-surface-routing.mjs";
+import { createEventStreamHub } from "./event-stream.mjs";
 
 const execFileAsync = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -55,7 +56,7 @@ async function loadHistory() {
   }
 }
 
-const subscribers = new Set();
+const eventStream = createEventStreamHub();
 const requests = new Map();
 const history = await loadHistory();
 const copilotUsage = createCopilotUsageMonitor({ configPath: copilotConfig });
@@ -91,8 +92,7 @@ function trimHistory() {
 }
 
 function sendEvent(type, payload) {
-  const line = `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const response of subscribers) response.write(line);
+  eventStream.send(type, payload);
 }
 
 function json(response, status, body) {
@@ -193,7 +193,6 @@ copilotCapture = await createCopilotCapture({
     if (type === "started") sendEvent("request-started", requestSnapshot(item));
     else sendEvent("request-finished", requestSnapshot(item));
     sendEvent("copilot", copilotDashboardState(copilotUsage.snapshot()));
-    sendEvent("state", initialState());
   },
 });
 usageTimelineStore = await createUsageTimelineStore({ dataDir });
@@ -898,6 +897,25 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/monitor/api/prototype-feedback" && request.method === "GET") {
     return json(response, 200, prototypeFeedbackStore.snapshot());
   }
+  if (requestUrl.pathname === "/monitor/api/request-capture" && request.method === "GET") {
+    if (!isLoopbackRequest(request) || !hasTrustedDashboardOrigin(request)) {
+      return json(response, 403, { error: "Full request journals are only available to the local dashboard" });
+    }
+    const capture = await readVsCodeRequestCapture({
+      edition: requestUrl.searchParams.get("client"),
+      sessionId: requestUrl.searchParams.get("session"),
+      requestId: requestUrl.searchParams.get("request"),
+    });
+    if (!capture) return json(response, 404, { error: "The complete local journal record is unavailable" });
+    return json(response, 200, {
+      input: capture.prompt || capture.transformedPrompt || capture.submittedPrompt || "",
+      output: capture.response || "",
+      reasoning: capture.thinking || "",
+      submitted: capture.submittedPrompt || "",
+      inputStatus: capture.inputContextStatus || "captured",
+      tools: capture.tools || [],
+    });
+  }
   if (requestUrl.pathname === "/monitor/api/prototype-feedback/export" && request.method === "GET") {
     return json(response, 200, prototypeFeedbackStore.exportBundle());
   }
@@ -1060,15 +1078,7 @@ const server = http.createServer(async (request, response) => {
     }
   }
   if (requestUrl.pathname === "/monitor/events") {
-    response.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    });
-    response.write(`event: state\ndata: ${JSON.stringify(initialState())}\n\n`);
-    subscribers.add(response);
-    request.on("close", () => subscribers.delete(response));
+    eventStream.subscribe(request, response, initialState());
     return;
   }
   return proxyRequest(request, response);
@@ -1082,7 +1092,7 @@ const proxyServer = proxyPort
   : null;
 
 setInterval(() => {
-  for (const response of subscribers) response.write(": heartbeat\n\n");
+  eventStream.heartbeat();
 }, 15_000).unref();
 
 async function refreshMetrics() {

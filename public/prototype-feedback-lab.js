@@ -58,12 +58,15 @@ const SECTION_TARGETS = [
   [".mux-classic-host .stream-panel", "request-evidence", "Classic AI communication wire"],
   [".mux-classic-host .side-panel", "classic-throughput-budget", "Classic throughput, budget, velocity, and token price panel"],
   [".mux-throughput", "throughput", "Throughput and live request counts"],
-  [".mux-head, .mux-c-head, .mux-e-head", "header", "Header, period, and total"],
+  [".mux-head, .mux-c-head, .mux-e-head, .mux-f-head, .mux-h-head, .mux-i-head", "header", "Header, period, and total"],
   [".mux-controls, .mux-c-controls, .mux-e-toolbar", "controls", "Filters and inspection controls"],
   [".mux-system-strip, .mux-c-machine, .mux-e-machine", "system-state", "Live system state"],
-  [".mux-a0-timeline, .mux-a-chart, .mux-b-scope, .mux-c-usage, .mux-d-film, .mux-e-horizon", "usage-timeline", "Usage-over-time visualization"],
+  [".mux-a0-timeline, .mux-a-chart, .mux-b-scope, .mux-c-usage, .mux-d-film, .mux-e-horizon, .mux-f-garden, .mux-h-fabric, .mux-i-game", "usage-timeline", "Usage-over-time visualization"],
   [".mux-a-index, .mux-b-quakes, .mux-e-ranking", "spike-ranking", "Spike and anomaly ranking"],
-  [".mux-evidence, .mux-b-proof, .mux-d-report, .mux-e-selected", "request-evidence", "Prompt and request evidence"],
+  [".mux-evidence, .mux-b-proof, .mux-d-report, .mux-e-selected, .mux-f-roots, .mux-h-proof, .mux-i-evidence", "request-evidence", "Prompt and request evidence"],
+  [".mux-manual", "manual-github-readings", "Manual GitHub credit checkpoints"],
+  [".mux-course", "course-control", "Credit target and future pace simulator"],
+  [".mux-prompt-coach", "prompt-coach", "Automatic prompt-practice guidance"],
   [".mux-history", "accumulated-usage", "Accumulated usage navigator"],
   [".mux-resources", "resource-correlation", "Usage and resource correlation"],
   [".mux-sessions", "session-lanes", "Parallel session lanes"],
@@ -459,7 +462,7 @@ export async function createPrototypeFeedbackLab({ prototypeRoot, variants, getC
     const context = getContext();
     const custom = context.custom === true;
     const navigation = custom
-      ? `<button data-lab-action="browse-variants" class="pfl-nav-button" aria-label="Browse prototype variants">A0–E</button><div class="pfl-dock-current"><small>MY MIXED VIEW</small><strong>${state.preferredView?.layout?.sections?.filter((item) => item.enabled !== false).length || 0} sections</strong></div><button data-lab-action="open-studio" class="pfl-nav-button" aria-label="Edit mixed layout">✦</button>`
+      ? `<button data-lab-action="browse-variants" class="pfl-nav-button" aria-label="Browse prototype variants">A0–I</button><div class="pfl-dock-current"><small>MY MIXED VIEW</small><strong>${state.preferredView?.layout?.sections?.filter((item) => item.enabled !== false).length || 0} sections</strong></div><button data-lab-action="open-studio" class="pfl-nav-button" aria-label="Edit mixed layout">✦</button>`
       : `<button data-lab-action="previous-variant" class="pfl-nav-button" aria-label="Previous prototype">←</button><div class="pfl-dock-current"><small>PROTOTYPE ${currentVariant}</small><strong>${escapeHtml(variants[currentVariant] || "Monitor direction")}</strong></div><button data-lab-action="next-variant" class="pfl-nav-button" aria-label="Next prototype">→</button>`;
     return `<nav class="pfl-toolbar" aria-label="Movable prototype lab dock"><button data-lab-action="drag-dock" class="pfl-dock-grip" aria-label="Move prototype lab dock. Double-click or press Home to reset." title="Drag to move · double-click to reset">⠿</button><div class="pfl-dock-navigation">${navigation}</div><div class="pfl-dock-actions"><button data-lab-action="toggle-review" class="${reviewMode ? "is-active" : ""}"><i class="pfl-comment-dot"></i>${reviewMode ? "Pick a section" : "Comment"}</button><button data-lab-action="compare">Compare <b class="pfl-count">${state.comments.length}</b></button><button data-lab-action="export">Export</button><button data-lab-action="default-menu" class="pfl-default-trigger"><span>Default</span><b>${escapeHtml(preferredSummary())}</b></button></div></nav>`;
   }

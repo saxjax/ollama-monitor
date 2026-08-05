@@ -23,30 +23,29 @@ const SECTION_LIBRARY = {
 
 const SECTION_FLAVOURS = {
   A0: "The actual dark observatory: readouts, dials, core rack, usage timeline, and wire",
-  A: "Calm editorial overview",
   B: "Cost-first seismograph",
   C: "Dense machine-room instrument",
-  D: "Scannable film-strip chronology",
   E: "Auditable incident ledger",
 };
 
-const SOURCE_VARIANTS = ["A0", "A", "B", "C", "D", "E"];
+const SOURCE_VARIANTS = ["A0", "B", "C", "E"];
 
 const DEFAULT_LAYOUT = {
-  shellVariant: "A",
+  shellVariant: "B",
   sections: [
-    ["throughput", "A"], ["timeline", "A"], ["spikes", "B"], ["evidence", "E"], ["system", "C"],
-    ["sessions", "A"], ["resources", "C"], ["accumulated", "B"], ["provider-evidence", "E"],
+    ["throughput", "B"], ["timeline", "B"], ["spikes", "B"], ["evidence", "E"], ["system", "C"],
+    ["sessions", "B"], ["resources", "C"], ["accumulated", "B"], ["provider-evidence", "E"],
   ].map(([id, sourceVariant]) => ({ id, sourceVariant, enabled: true })),
 };
 
 function normalizeLayout(layout) {
   const source = layout && typeof layout === "object" ? layout : DEFAULT_LAYOUT;
-  const sections = Array.isArray(source.sections) ? structuredClone(source.sections) : structuredClone(DEFAULT_LAYOUT.sections);
+  const sections = (Array.isArray(source.sections) ? structuredClone(source.sections) : structuredClone(DEFAULT_LAYOUT.sections))
+    .map((section) => ({ ...section, sourceVariant: SOURCE_VARIANTS.includes(section.sourceVariant) ? section.sourceVariant : "B" }));
   if (!sections.some((section) => section.id === "throughput")) {
-    sections.unshift({ id: "throughput", sourceVariant: "A", enabled: true });
+    sections.unshift({ id: "throughput", sourceVariant: "B", enabled: true });
   } else sections.find((section) => section.id === "throughput").enabled = true;
-  return { shellVariant: SOURCE_VARIANTS.includes(source.shellVariant) ? source.shellVariant : "A", sections };
+  return { shellVariant: SOURCE_VARIANTS.includes(source.shellVariant) ? source.shellVariant : "B", sections };
 }
 
 const SECTION_TARGETS = [
@@ -58,12 +57,12 @@ const SECTION_TARGETS = [
   [".mux-classic-host .stream-panel", "request-evidence", "Classic AI communication wire"],
   [".mux-classic-host .side-panel", "classic-throughput-budget", "Classic throughput, budget, velocity, and token price panel"],
   [".mux-throughput", "throughput", "Throughput and live request counts"],
-  [".mux-head, .mux-c-head, .mux-e-head, .mux-f-head, .mux-h-head, .mux-i-head", "header", "Header, period, and total"],
+  [".mux-head, .mux-c-head, .mux-e-head, .mux-i-head", "header", "Header, period, and total"],
   [".mux-controls, .mux-c-controls, .mux-e-toolbar", "controls", "Filters and inspection controls"],
   [".mux-system-strip, .mux-c-machine, .mux-e-machine", "system-state", "Live system state"],
-  [".mux-a0-timeline, .mux-a-chart, .mux-b-scope, .mux-c-usage, .mux-d-film, .mux-e-horizon, .mux-f-garden, .mux-h-fabric, .mux-i-game", "usage-timeline", "Usage-over-time visualization"],
-  [".mux-a-index, .mux-b-quakes, .mux-e-ranking", "spike-ranking", "Spike and anomaly ranking"],
-  [".mux-evidence, .mux-b-proof, .mux-d-report, .mux-e-selected, .mux-f-roots, .mux-h-proof, .mux-i-evidence", "request-evidence", "Prompt and request evidence"],
+  [".mux-a0-timeline, .mux-b-scope, .mux-c-usage, .mux-e-horizon, .mux-i-game", "usage-timeline", "Usage-over-time visualization"],
+  [".mux-b-quakes, .mux-e-ranking", "spike-ranking", "Spike and anomaly ranking"],
+  [".mux-evidence, .mux-b-proof, .mux-e-selected, .mux-i-evidence", "request-evidence", "Prompt and request evidence"],
   [".mux-manual", "manual-github-readings", "Manual GitHub credit checkpoints"],
   [".mux-course", "course-control", "Credit target and future pace simulator"],
   [".mux-prompt-coach", "prompt-coach", "Automatic prompt-practice guidance"],

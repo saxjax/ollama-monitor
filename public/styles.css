@@ -52,10 +52,11 @@ h1 span { color: var(--amber); font-family: var(--mono); font-size: .62em; margi
 .clock small { color: var(--muted); font-size: 12px; letter-spacing: .12em; }
 .help-button { width: 31px; height: 31px; padding: 0; color: var(--cyan); border: 1px solid rgba(86,242,196,.45); border-radius: 50%; background: rgba(86,242,196,.04); font: 18px var(--display); cursor: pointer; }
 .help-button:hover, .help-button:focus-visible { color: var(--paper); border-color: var(--cyan); box-shadow: 0 0 14px rgba(86,242,196,.14); outline: none; }
-.prototype-lab-link { padding: 8px 10px; color: var(--amber); border: 1px solid rgba(255,176,0,.38); font-size: 12px; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; white-space: nowrap; }
-.prototype-lab-link:hover, .prototype-lab-link:focus-visible { color: var(--paper); border-color: var(--amber); outline: none; }
-.saxjax-native-app .prototype-lab-link { display: none; }
-
+.surface-switch { display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.18); }
+.surface-link { padding: 8px 10px; color: var(--muted); border-right: 1px solid rgba(255,255,255,.15); font-size: 12px; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; white-space: nowrap; transition: color .15s ease, background-color .15s ease; }
+.surface-link:last-child { border-right: 0; }
+.surface-link:hover, .surface-link:focus-visible { color: var(--paper); outline: none; }
+.surface-link.is-active, .surface-link[aria-current="page"] { color: var(--amber); background: rgba(255,176,0,.07); }
 main { padding: 0 clamp(22px, 4vw, 64px) 52px; }
 .telemetry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-left: 1px solid var(--line); }
 .telemetry-dials { grid-template-columns: repeat(4, minmax(0, 1fr)); }

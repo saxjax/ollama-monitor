@@ -5,14 +5,18 @@ import { preferredMonitorLocation } from "./monitor-surface-routing.mjs";
 
 test("preferred prototypes launch as the default monitor surface, not as the LAB", () => {
   assert.equal(
-    preferredMonitorLocation({ mode: "variant", variant: "D" }),
-    "/monitor/?prototype=monitor&surface=default&variant=D",
+    preferredMonitorLocation({ mode: "variant", variant: "E" }),
+    "/monitor/?prototype=monitor&surface=default&variant=E",
   );
   assert.equal(
     preferredMonitorLocation({ mode: "custom" }),
     "/monitor/?prototype=monitor&surface=default&layout=custom",
   );
   assert.equal(preferredMonitorLocation({ mode: "classic" }), null);
+  assert.equal(
+    preferredMonitorLocation({ mode: "variant", variant: "D" }),
+    "/monitor/?prototype=monitor&surface=default&variant=B",
+  );
 });
 
 test("the native MONITOR action opens the preferred monitor instead of forcing Classic", async () => {

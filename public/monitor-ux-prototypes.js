@@ -1,8 +1,6 @@
-// PROTOTYPE — eight disposable full-monitor directions, switchable with
-// /monitor/?prototype=monitor&variant=A. Monitor data stays read-only; the
+// PROTOTYPE — five disposable full-monitor directions, switchable with
+// /monitor/?prototype=monitor&variant=B. Monitor data stays read-only; the
 // separate prototype review layer persists only comments and aggregate usage.
-
-import { concurrentSessionCounts } from "/monitor/usage-timeline-view-model.mjs";
 
 const params = new URLSearchParams(location.search);
 const prototypeEnabled = params.get("prototype") === "monitor";
@@ -10,18 +8,14 @@ const labEnabled = prototypeEnabled && params.get("surface") !== "default";
 
 const VARIANTS = {
   A0: "Classic monitor",
-  A: "Flight recorder",
   B: "Cost seismograph",
   C: "Machine room",
-  D: "Month contact sheet",
   E: "Incident ledger",
-  F: "Credit garden",
-  H: "Prompt loom",
   I: "Run the month",
   G: "Build your own",
 };
 
-const VISUAL_VARIANTS = ["A0", "A", "B", "C", "D", "E", "F", "H", "I"];
+const VISUAL_VARIANTS = ["A0", "B", "C", "E", "I"];
 const PROTOTYPE_DETAIL_KEY = "saxjax.prototype-detail-level.v1";
 
 function initialDetailLevel() {
@@ -291,11 +285,26 @@ function buildView(events, month, unit, anomalyMode = "value", threshold = 0) {
     id: `${day}:${bucket}`, day, bucket, total: 0, events: [], byOrigin: {}, concurrent: 0, missing: 0,
   })));
   const slotMap = new Map(slots.map((slot) => [slot.id, slot]));
+  const slotSessions = new Map();
+  const originTotals = new Map();
+  const sessions = new Set();
+  let measured = 0;
+  let total = 0;
+
   for (const event of monthEvents) {
     const value = unitValue(event, unit);
+    const measuredValue = event[unit];
     const day = dayMap.get(event.day);
     const slot = slotMap.get(`${event.day}:${event.bucket}`);
     if (!day || !slot) continue;
+
+    sessions.add(event.sessionId);
+    originTotals.set(event.origin, (originTotals.get(event.origin) || 0) + value);
+    if (Number.isFinite(measuredValue)) {
+      measured += 1;
+      total += measuredValue;
+    }
+
     day.events.push(event);
     if (!Number.isFinite(event[unit])) day.missing += 1;
     day.total += value;
@@ -304,40 +313,49 @@ function buildView(events, month, unit, anomalyMode = "value", threshold = 0) {
     if (!Number.isFinite(event[unit])) slot.missing += 1;
     slot.total += value;
     slot.byOrigin[event.origin] = (slot.byOrigin[event.origin] || 0) + value;
+
+    const startBucket = Math.max(0, Math.min(47, Math.floor((event.minute || 0) / 30)));
+    const endBucket = Math.max(
+      startBucket + 1,
+      Math.min(48, Math.ceil(((event.minute || 0) + Math.max(1, event.durationMinutes || 0)) / 30)),
+    );
+    for (let bucket = startBucket; bucket < endBucket; bucket += 1) {
+      const slotId = `${event.day}:${bucket}`;
+      if (!slotMap.has(slotId)) continue;
+      let activeSessions = slotSessions.get(slotId);
+      if (!activeSessions) {
+        activeSessions = new Set();
+        slotSessions.set(slotId, activeSessions);
+      }
+      activeSessions.add(event.sessionId);
+    }
   }
-  // Populate concurrency while walking the events instead of scanning the
-  // complete month once for every half-hour slot. Large imported journals can
-  // contain tens of thousands of events, so the former slots × events pass
-  // could leave the browser's main thread unresponsive before first paint.
-  const concurrentSessions = concurrentSessionCounts(monthEvents);
-  for (const slot of slots) slot.concurrent = concurrentSessions.get(slot.id) || 0;
+  for (const slot of slots) {
+    slot.concurrent = slotSessions.get(slot.id)?.size || 0;
+  }
   const daily = [...dayMap.values()];
-  const measuredEvents = monthEvents.filter((event) => Number.isFinite(event[unit]));
-  const total = measuredEvents.reduce((sum, event) => sum + event[unit], 0);
   const peakDay = daily.reduce((peak, day) => day.total > peak.total ? day : peak, daily[0] || { total: 0, events: [] });
   const peakSlot = slots.reduce((peak, slot) => slot.total > peak.total ? slot : peak, slots[0] || { total: 0, events: [] });
   const nonZero = slots.map((slot) => slot.total).filter(Boolean).sort((a, b) => a - b);
   const occupiedMedian = nonZero[Math.floor(nonZero.length / 2)] || 1;
   const bucketBaselines = Array.from({ length: 48 }, (_, bucket) => median(slots.filter((slot) => slot.bucket === bucket && slot.total > 0).map((slot) => slot.total)) || occupiedMedian);
-  const ranked = slots.filter((slot) => slot.total > 0 && slot.total >= threshold).map((slot) => {
-    const index = slots.indexOf(slot);
+  const ranked = slots.flatMap((slot, index) => {
+    if (!(slot.total > 0 && slot.total >= threshold)) return [];
     const previous = slots[index - 1]?.total || 0;
     const multiple = slot.total / Math.max(1, bucketBaselines[slot.bucket]);
     const jump = Math.max(0, slot.total - previous);
     const jumpPercent = (slot.total - previous) / Math.max(1, previous) * 100;
     const score = anomalyMode === "jump" ? jumpPercent : anomalyMode === "unusual" ? multiple : slot.total;
-    return { ...slot, multiple, jump, jumpPercent, score };
+    return [{ ...slot, multiple, jump, jumpPercent, score }];
   }).sort((left, right) => right.score - left.score);
   const topSlots = ranked.slice(0, 12).map((slot, rank) => ({ ...slot, rank: rank + 1 }));
   let running = 0;
   const cumulative = slots.map((slot) => (running += slot.total));
-  const origins = [...new Set(monthEvents.map((event) => event.origin))];
-  const originTotals = origins.map((origin) => ({
+  const originTotalsList = [...originTotals.keys()].map((origin) => ({
     origin,
-    total: monthEvents.filter((event) => event.origin === origin).reduce((sum, event) => sum + unitValue(event, unit), 0),
+    total: originTotals.get(origin) || 0,
   })).sort((left, right) => right.total - left.total);
-  const sessions = [...new Set(monthEvents.map((event) => event.sessionId))];
-  return { monthEvents, days, daily, slots, total, peakDay, peakSlot, topSlots, cumulative, originTotals, measured: measuredEvents.length, missing: monthEvents.length - measuredEvents.length, median: occupiedMedian, sessions };
+  return { monthEvents, days, daily, slots, total, peakDay, peakSlot, topSlots, cumulative, originTotals: originTotalsList, measured, missing: monthEvents.length - measured, median: occupiedMedian, sessions: [...sessions] };
 }
 
 function systemView(state) {
@@ -848,23 +866,6 @@ function analysisDock(model, includeCumulative = true) {
   return `<div class="mux-analysis-dock">${includeCumulative ? cumulativeNavigator(model) : ""}${resourceCorrelation(model)}${sessionLanes(model)}${truthPanel(model)}</div>`;
 }
 
-function VariantA(model) {
-  return `<div class="mux mux-a">
-    ${commonHeader(model, "Flight recorder", "Usage becomes altitude: a continuous route, coloured flight knots, and a zoomed approach path for the selected day.")}
-    ${controlDeck(model)}
-    ${throughputPanel(model)}
-    ${systemStrip(model, true)}
-    <main class="mux-a-layout">
-      <section class="mux-a-chart"><div class="mux-section-title"><span>01 / ${model.zoom === "month" ? "Cost altitude by day" : `${model.selectedDay} investigation`}</span><h2>Trace the month’s flight path</h2>${legend(model)}</div>${flightPathChart(model, 285, model.zoom === "month")}
-        <div class="mux-day-slice"><header><span>${model.selectedDay} · approach path / 30-minute knots</span><strong>Peak interval · ${formatLabeledValue(model.view.slots.filter((slot) => slot.day === model.selectedDay).reduce((peak, slot) => slot.total > peak ? slot.total : peak, 0), model.unit)}</strong></header>${flightPathChart(model, 190, false)}</div>
-      </section>
-      <aside class="mux-a-index"><span>Flight marks</span><h2>Largest jumps</h2><p>Ranked against the median occupied 30-minute interval.</p>${incidentList(model, 8)}</aside>
-      ${evidence(model, 18)}
-    </main>
-    ${analysisDock(model)}
-  </div>`;
-}
-
 function VariantB(model) {
   const selected = model.view.slots.find((slot) => slot.id === model.selectedSlotId) || model.view.peakSlot;
   return `<div class="mux mux-b">
@@ -923,20 +924,6 @@ function dayFilm(day, model) {
     }).join("")}</svg>
     <strong>${formatLabeledValue(day.total, model.unit, true)}</strong><small>${day.events.length} recorded exposures</small>
   </button>`;
-}
-
-function VariantD(model) {
-  return `<div class="mux mux-d">
-    ${commonHeader(model, "Month contact sheet", "Every day is a separate exposure. Bubble grain reveals rhythm and intensity before you pull a frame into the loupe.")}
-    ${controlDeck(model)}
-    ${throughputPanel(model)}
-    <main class="mux-d-layout">
-      <section class="mux-d-film"><header><span>${formatMonth(model.month)} / contact exposures · ${sortLabel(model.sortDirection)}</span><div>${legend(model)}</div></header><div class="mux-contact-grid">${sortedDays(model).filter((day) => model.zoom === "month" || day.day === model.selectedDay).map((day) => dayFilm(day, model)).join("")}</div></section>
-      <aside class="mux-d-report"><span>Pulled frame / source constellation</span><h2>${model.selectedDay}</h2>${bubbleTimeline(model, model.selectedDay, 205)}${evidence(model, 12)}</aside>
-      <footer>${systemStrip(model)}</footer>
-    </main>
-    ${analysisDock(model)}
-  </div>`;
 }
 
 function VariantE(model) {
@@ -1297,15 +1284,6 @@ function gardenChart(model, height = 520) {
   return `<svg class="mux-garden-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="A usage garden: actual daily usage grows solid plants, simulated future usage grows outlined plants, and prompt-practice flags grow as weeds."><defs><pattern id="garden-soil" width="20" height="12" patternUnits="userSpaceOnUse"><path d="M0 6 Q5 1 10 6 T20 6" fill="none" stroke="currentColor" opacity=".12"/></pattern></defs><rect x="0" y="${ground}" width="${width}" height="${height - ground}" fill="url(#garden-soil)"/><path class="mux-garden-canopy" d="M${left} ${safeY} H${width - right}"/><text class="mux-garden-safe" x="${width - right + 8}" y="${safeY + 4}">SAFE DAILY CANOPY · ${escapeHtml(formatValue(plan.sustainable, model.unit, true))}</text>${readings}${plants}<g class="mux-garden-reservoir"><circle cx="${width - 92}" cy="${ground - 108}" r="67"/><path d="M${width - 151} ${ground - 108 + 58 * Math.max(-1, Math.min(1, plan.used / plan.target * 2 - 1))} A59 59 0 0 0 ${width - 33} ${ground - 108 + 58 * Math.max(-1, Math.min(1, plan.used / plan.target * 2 - 1))} L${width - 33} ${ground - 49} L${width - 151} ${ground - 49}Z"/><text x="${width - 92}" y="${ground - 117}" text-anchor="middle">${escapeHtml(formatValue(plan.used, model.unit, true))} / ${escapeHtml(formatValue(plan.target, model.unit, true))}</text><text x="${width - 92}" y="${ground - 96}" text-anchor="middle">${escapeHtml(unitLabel(model.unit).toUpperCase())}</text></g></svg>`;
 }
 
-function VariantF(model) {
-  return `<div class="mux mux-f">
-    <header class="mux-f-head"><div><span>SAXJAX / LIVING BUDGET</span><h1>Credit garden</h1><p>The month grows in front of you. Solid plants are history, outlined plants are your simulated future, and prompt smells surface as weeds.</p>${planningNavigator(model)}</div><div>${powerSwitch(model)}</div></header>
-    ${controlDeck(model)}
-    <main class="mux-f-layout"><section class="mux-f-garden"><header><span>${formatMonth(model.month)} · ${model.view.monthEvents.length} requests</span><h2>Will this pace outgrow the greenhouse?</h2><div>${legend(model)}</div></header>${gardenChart(model)}</section><aside class="mux-f-sidebar">${courseControls(model, "garden")}${manualReadingList(model, "garden")}</aside>${promptCoach(model, "garden", 6)}</main>
-    <footer class="mux-f-roots">${systemStrip(model, true)}${evidence(model, 8)}</footer>
-  </div>`;
-}
-
 function loomChart(model, height = 510) {
   const plan = monthPlanning(model);
   const hygiene = promptHygiene(model);
@@ -1335,15 +1313,6 @@ function loomChart(model, height = 510) {
     return `<g class="mux-loom-reading"><path d="M${x - 7} 11 H${x + 7} L${x} 31Z"/><line x1="${x}" y1="31" x2="${x}" y2="${height - 26}"/><text x="${x}" y="9" text-anchor="middle">${escapeHtml(formatValue(reading.value, model.unit, true))}</text></g>`;
   }).join("");
   return `<svg class="mux-loom-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Usage woven by source across days. Saturation is usage, numbered knots are possible prompt bad practices, and gold needles are manual GitHub readings."><g class="mux-loom-warp">${model.view.daily.map((day, index) => `<line x1="${left + (index + .5) * column}" y1="${top - 12}" x2="${left + (index + .5) * column}" y2="${height - 28}"/>`).join("")}</g>${threads}${origins.map((origin, index) => `<text x="${left - 12}" y="${top + (index + .5) * rowHeight + 4}" text-anchor="end">${escapeHtml(ORIGIN_LABELS[origin] || origin)}</text>`).join("")}${model.view.daily.map((day, index) => index % 2 === 0 ? `<text x="${left + (index + .5) * column}" y="${height - 8}" text-anchor="middle">${day.day.slice(-2)}</text>` : "").join("")}${readings}${knots}<g class="mux-loom-shuttle" transform="translate(${left + Math.min(model.view.daily.length - 1, plan.elapsed - 1) * column},${height - 23})"><path d="M0 0 h58 l13 8 -13 8 H0 l-13 -8Z"/><text x="29" y="11" text-anchor="middle">NOW</text></g></svg>`;
-}
-
-function VariantH(model) {
-  const plan = monthPlanning(model);
-  return `<div class="mux mux-h">
-    <header class="mux-h-head"><div><span>SAXJAX / MONTHLY TEXTILE</span><h1>The prompt loom</h1><p>Sources become coloured threads. Daily density becomes fabric. Bad prompt habits become literal knots you can open and untangle.</p>${planningNavigator(model)}</div><div class="mux-h-tension" data-course="${plan.state}"><span>TENSION</span><b>${plan.state === "over" ? "TOO TIGHT" : plan.state === "under" ? "LOOSE" : "BALANCED"}</b><small>${formatValue(plan.projection, model.unit, true)} projected / ${formatValue(plan.target, model.unit, true)} target</small></div>${powerSwitch(model)}</header>
-    <div class="mux-h-tools">${controlDeck(model)}</div>
-    <main class="mux-h-layout"><section class="mux-h-fabric"><header><div><span>${formatMonth(model.month)} / THREAD DENSITY</span><h2>Where did the month tighten?</h2></div>${legend(model)}</header>${loomChart(model)}</section><aside class="mux-h-bench">${manualReadingList(model, "loom")}${courseControls(model, "loom")}</aside>${promptCoach(model, "loom", 8)}<section class="mux-h-proof">${evidence(model, 10)}</section></main>
-  </div>`;
 }
 
 function boardPath(model) {
@@ -1439,33 +1408,33 @@ const CUSTOM_SECTION_LABELS = {
 };
 
 const DEFAULT_CUSTOM_LAYOUT = {
-  shellVariant: "A",
+  shellVariant: "B",
   sections: [
-    ["throughput", "A"], ["timeline", "A"], ["spikes", "B"], ["evidence", "E"],
-    ["system", "C"], ["sessions", "A"], ["resources", "C"], ["accumulated", "B"], ["provider-evidence", "E"],
+    ["throughput", "B"], ["timeline", "B"], ["spikes", "B"], ["evidence", "E"],
+    ["system", "C"], ["sessions", "B"], ["resources", "C"], ["accumulated", "B"], ["provider-evidence", "E"],
   ].map(([id, sourceVariant]) => ({ id, sourceVariant, enabled: true })),
 };
 
+const CUSTOM_SOURCE_VARIANTS = ["A0", "B", "C", "E"];
+
 function normalizedCustomLayout(layout) {
   const source = layout && typeof layout === "object" ? layout : DEFAULT_CUSTOM_LAYOUT;
-  const sections = Array.isArray(source.sections) ? structuredClone(source.sections) : structuredClone(DEFAULT_CUSTOM_LAYOUT.sections);
-  if (!sections.some((section) => section.id === "throughput")) sections.unshift({ id: "throughput", sourceVariant: "A", enabled: true });
+  const sections = (Array.isArray(source.sections) ? structuredClone(source.sections) : structuredClone(DEFAULT_CUSTOM_LAYOUT.sections))
+    .map((section) => ({ ...section, sourceVariant: CUSTOM_SOURCE_VARIANTS.includes(section.sourceVariant) ? section.sourceVariant : "B" }));
+  if (!sections.some((section) => section.id === "throughput")) sections.unshift({ id: "throughput", sourceVariant: "B", enabled: true });
   else sections.find((section) => section.id === "throughput").enabled = true;
-  return { shellVariant: ["A0", "A", "B", "C", "D", "E"].includes(source.shellVariant) ? source.shellVariant : "A", sections };
+  return { shellVariant: CUSTOM_SOURCE_VARIANTS.includes(source.shellVariant) ? source.shellVariant : "B", sections };
 }
 
 function customTimeline(model, source) {
   const selected = model.view.slots.find((slot) => slot.id === model.selectedSlotId) || model.view.peakSlot;
   if (source === "A0") return `<section class="mux-a0-timeline"><header><span>CALENDAR INTENSITY · EVERY CELL NAMES ITS VALUE</span><h2>Which days changed the burn?</h2>${legend(model)}</header>${classicCalendarHeatmap(model)}</section>`;
-  if (source === "A") return `<section class="mux-a-chart"><div class="mux-section-title"><span>${model.zoom === "month" ? "COST ALTITUDE BY DAY" : `${model.selectedDay} INVESTIGATION`}</span><h2>Trace the flight path</h2>${legend(model)}</div>${flightPathChart(model, 285, model.zoom === "month")}<div class="mux-day-slice"><header><span>${model.selectedDay} · approach path</span><strong>Peak interval · ${formatLabeledValue(model.view.slots.filter((slot) => slot.day === model.selectedDay).reduce((peak, slot) => Math.max(peak, slot.total), 0), model.unit)}</strong></header>${flightPathChart(model, 190, false)}</div></section>`;
   if (source === "B") return `<section class="mux-b-scope"><div class="mux-b-scopehead"><span>Seismic ${unitLabel(model.unit)}</span><strong>${formatLabeledValue(model.view.total, model.unit)}</strong><small>Every spring is an exact 30-minute contribution.</small></div>${seismographChart(model, 330)}<div class="mux-b-selected"><span>Selected interval</span><b>Day ${selected.day.slice(-2)} · ${clock(selected.bucket * 30)}</b><strong>${formatLabeledValue(selected.total, model.unit)}</strong><small>${selected.events.length} recorded requests</small></div></section>`;
   if (source === "C") return `<section class="mux-c-usage"><header><span>${model.zoom === "month" ? "MONTH ORBIT" : `${model.selectedDay} ORBIT`}</span><h2>Inference orbit</h2><p>Distance and node size are usage; colour is source.</p>${legend(model)}</header>${orbitChart(model, 440)}<div class="mux-c-ruler"><span>Quiet</span><i></i><b>Selected ${model.selectedSlotId.replace(":", " / ")}</b><i></i><span>Intense</span></div></section>`;
-  if (source === "D") return `<section class="mux-d-film"><header><span>${formatMonth(model.month)} / contact exposures · ${sortLabel(model.sortDirection)}</span>${legend(model)}</header><div class="mux-contact-grid">${sortedDays(model).filter((day) => model.zoom === "month" || day.day === model.selectedDay).map((day) => dayFilm(day, model)).join("")}</div>${bubbleTimeline(model, model.selectedDay, 205)}</section>`;
   return `<section class="mux-e-horizon"><header><span>${model.zoom === "month" ? "MONTH" : "DAY"} FLOW REGISTER</span><h2>Source → incident → ledger</h2><p>Ribbon width is measured usage.</p></header>${usageFlowChart(model, 320)}</section>`;
 }
 
 function customSpikes(model, source) {
-  if (source === "A") return `<aside class="mux-a-index"><span>Flight marks</span><h2>Largest jumps</h2><p>Ranked against the median occupied interval.</p>${incidentList(model, 10)}</aside>`;
   if (source === "B") return `<aside class="mux-b-quakes"><header><span>Recorded shocks</span><b>${model.view.topSlots.length}</b></header>${incidentList(model, 12)}</aside>`;
   if (source === "E") return `<aside class="mux-e-ranking"><header><span>RANK</span><span>TIME</span><span>VALUE / CAUSE</span></header>${incidentList(model, 12)}</aside>`;
   return `<aside class="mux-custom-ranking"><span>${source === "C" ? "INSTRUMENT FLAGS" : "PULLED FRAMES"}</span><h2>Intervals worth opening</h2>${incidentList(model, 12)}</aside>`;
@@ -1473,7 +1442,6 @@ function customSpikes(model, source) {
 
 function customEvidence(model, source) {
   if (source === "B") return `<aside class="mux-b-proof">${evidence(model, 24)}</aside>`;
-  if (source === "D") return `<div class="mux-d-report"><span>Pulled evidence</span><h2>${model.selectedDay}</h2>${evidence(model, 24)}</div>`;
   if (source === "E") return `<section class="mux-e-selected">${evidence(model, 30)}</section>`;
   return evidence(model, 30);
 }
@@ -1485,7 +1453,7 @@ function customSystem(model, source) {
 }
 
 function customSection(model, section) {
-  const source = section.sourceVariant || "A";
+  const source = CUSTOM_SOURCE_VARIANTS.includes(section.sourceVariant) ? section.sourceVariant : "B";
   let content = "";
   if (section.id === "throughput") content = throughputPanel(model, false, source);
   if (section.id === "timeline") content = customTimeline(model, source);
@@ -1516,23 +1484,23 @@ async function startMonitorPrototype() {
   const root = document.createElement("div");
   root.id = "monitor-ux-prototype-root";
   document.body.prepend(root);
+  root.className = "monitor-ux-root is-loading";
+  root.innerHTML = `<section class="mux-loading" role="status" aria-live="polite"><h1>Opening monitor</h1><p data-loading-stage>Starting local monitor surface...</p><small data-loading-detail>Loading local timeline, live state, and preferences.</small></section>`;
 
-  // A0 is the real monitor, not a reconstruction. Keep the production nodes
-  // alive while other throwaway variants are open so app.js and the timeline
-  // renderer retain their event listeners and live state.
-  const classicParking = document.createElement("div");
-  classicParking.id = "monitor-classic-parking";
-  classicParking.hidden = true;
-  document.body.appendChild(classicParking);
-  const classicNodes = [
+  const setLoadingStage = (stage, detail = "") => {
+    root.querySelector("[data-loading-stage]").textContent = stage;
+    root.querySelector("[data-loading-detail]").textContent = detail;
+  };
+
+  // Prototype mode owns rendering and data flow. Remove the classic shell to
+  // prevent duplicated surfaces and event work from accumulating in memory.
+  [
     document.querySelector("body > .grain"),
     document.querySelector("body > .masthead"),
     document.querySelector("body > main"),
-  ].filter(Boolean);
-  const parkClassic = () => classicNodes.forEach((node) => classicParking.appendChild(node));
-  const mountClassic = (host) => classicNodes.forEach((node) => host.appendChild(node));
-  parkClassic();
+  ].filter(Boolean).forEach((node) => node.remove());
 
+  setLoadingStage("Contacting local monitor APIs...", "Reading usage timeline and live state from this Mac.");
   const [timelineResponse, stateResponse, feedbackResponse] = await Promise.all([
     fetch("/monitor/api/usage-timeline", { cache: "no-store" }),
     // The durable timeline already supplies historical evidence. Fetch only
@@ -1541,9 +1509,12 @@ async function startMonitorPrototype() {
     fetch("/monitor/api/state?compact=1", { cache: "no-store" }),
     fetch("/monitor/api/prototype-feedback", { cache: "no-store" }),
   ]);
+  setLoadingStage("Decoding local records...", "Large local history can take longer to decode.");
   const timeline = await timelineResponse.json();
   let feedbackSnapshot = await feedbackResponse.json();
   let liveState = await stateResponse.json();
+  const eventCount = Array.isArray(timeline?.usageEvents) ? timeline.usageEvents.length : 0;
+  setLoadingStage("Preparing timeline model...", `${eventCount.toLocaleString()} usage records found locally.`);
   let events = normalizeEvents(timeline);
   const liveEvents = new Map();
   const mergeLiveEvents = () => {
@@ -1554,11 +1525,11 @@ async function startMonitorPrototype() {
   const fallbackMonth = localParts(new Date().toISOString()).month;
   let months = [...new Set(events.map((event) => event.month))].sort();
   if (!months.length) months = [fallbackMonth];
-  let preferredView = feedbackSnapshot.preferredView || { mode: "classic", variant: "A", layout: { shellVariant: "A", sections: [] } };
+  let preferredView = feedbackSnapshot.preferredView || { mode: "classic", variant: "B", layout: { shellVariant: "B", sections: [] } };
   const openPreferred = params.get("view") === "preferred";
   let customMode = params.get("layout") === "custom" || (openPreferred && preferredView.mode === "custom");
   const requestedVariant = params.get("variant")?.toUpperCase();
-  let variant = VARIANTS[requestedVariant] ? requestedVariant : openPreferred && preferredView.mode === "variant" ? preferredView.variant : customMode ? preferredView.layout?.shellVariant || "A" : "A";
+  let variant = VARIANTS[requestedVariant] ? requestedVariant : openPreferred && preferredView.mode === "variant" && VARIANTS[preferredView.variant] ? preferredView.variant : customMode ? normalizedCustomLayout(preferredView.layout).shellVariant : "B";
   if (requestedVariant === "G") customMode = true;
   let unit = ["tokens", "credits", "dollars"].includes(params.get("unit")) ? params.get("unit") : "credits";
   let month = months.includes(params.get("month")) ? params.get("month") : months.reduce((latest, item) => events.filter((event) => event.month === item).length >= 10 ? item : latest, months.at(-1));
@@ -1676,16 +1647,16 @@ async function startMonitorPrototype() {
     } : null;
     const current = model();
     syncUrl();
-    const views = { A: VariantA, B: VariantB, C: VariantC, D: VariantD, E: VariantE, F: VariantF, H: VariantH, I: VariantI };
-    parkClassic();
-    root.className = `monitor-ux-root reading-${prototypeDetailLevel} ${customMode ? "variant-custom" : variant === "A0" ? "variant-a0-native" : `variant-${variant.toLowerCase()}`}`;
-    const browserLabEntry = labEnabled ? "" : `<a class="mux-lab-entry" href="/monitor/?prototype=monitor&view=preferred">Prototype lab</a>`;
+    const views = { A0: VariantA0, B: VariantB, C: VariantC, E: VariantE, I: VariantI };
+    root.className = `monitor-ux-root reading-${prototypeDetailLevel} ${customMode ? "variant-custom" : `variant-${variant.toLowerCase()}`}`;
+    const browserLabEntry = labEnabled
+      ? ""
+      : `<a class="mux-lab-entry" href="/monitor/">Classic monitor</a>`;
     const readingDetailControl = detailToggle();
+    const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
     if (!customMode && variant === "A0") {
-      root.innerHTML = `<div class="mux-classic-host" data-feedback-id="classic-monitor" data-feedback-kind="prototype" data-feedback-label="Complete Classic monitor"></div>${browserLabEntry}${readingDetailControl}`;
-      mountClassic(root.querySelector(".mux-classic-host"));
+      root.innerHTML = `${view}${browserLabEntry}${readingDetailControl}`;
     } else {
-      const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
       root.innerHTML = `${view}${browserLabEntry}${readingDetailControl}`;
     }
     let replacementPaper = null;
@@ -2076,7 +2047,7 @@ async function startMonitorPrototype() {
       changeVariant: (next) => {
         if (!VARIANTS[next]) return;
         customMode = next === "G";
-        variant = customMode ? preferredView.layout?.shellVariant || "A" : next;
+        variant = customMode ? normalizedCustomLayout(preferredView.layout).shellVariant : next;
         syncUrl();
         render();
         feedbackLab?.variantChanged(variant);
@@ -2097,17 +2068,14 @@ async function startMonitorPrototype() {
   render();
 }
 
-// Top-level await keeps the page's load lifecycle open until the real local
-// timeline has painted. It also makes screenshots and the native WebView show a
-// complete first frame instead of a black async-loading gap.
 if (prototypeEnabled) {
-  try {
-    await startMonitorPrototype();
-  } catch (error) {
-    document.documentElement.classList.add("monitor-ux-prototype-active");
-    const root = document.querySelector("#monitor-ux-prototype-root") || document.body.appendChild(document.createElement("div"));
-    root.id = "monitor-ux-prototype-root";
-    root.style.cssText = "display:block;padding:40px;color:#f5d8cf;background:#1b1110;font:16px/1.5 ui-monospace,monospace;min-height:100vh";
-    root.innerHTML = `<h1>Prototype failed to render</h1><pre>${escapeHtml(error?.stack || error)}</pre>`;
-  }
+  queueMicrotask(() => {
+    startMonitorPrototype().catch((error) => {
+      document.documentElement.classList.add("monitor-ux-prototype-active");
+      const root = document.querySelector("#monitor-ux-prototype-root") || document.body.appendChild(document.createElement("div"));
+      root.id = "monitor-ux-prototype-root";
+      root.style.cssText = "display:block;padding:40px;color:#f5d8cf;background:#1b1110;font:16px/1.5 ui-monospace,monospace;min-height:100vh";
+      root.innerHTML = `<h1>Prototype failed to render</h1><pre>${escapeHtml(error?.stack || error)}</pre>`;
+    });
+  });
 }

@@ -25,7 +25,10 @@
         <span><b id="server-label">Connecting</b><small id="server-version">OLLAMA · POWER</small></span>
       </button>
       <div class="clock"><strong id="clock">--:--:--</strong><small id="clock-zone">LOCAL TIME</small></div>
-      <a class="prototype-lab-link" href="/monitor/?prototype=monitor&amp;view=preferred" title="Open your preferred prototype or the five interactive monitor directions">Prototype lab</a>
+      <nav class="surface-switch" aria-label="Monitor surface switch">
+        <a class="surface-link is-active" href="/monitor/" aria-current="page" title="Open the classic monitor">Classic</a>
+        <a class="surface-link" href="/monitor/?prototype=monitor&amp;view=preferred" title="Open your selected prototype monitor">My prototype</a>
+      </nav>
       <button class="help-button" id="help-open" type="button" aria-label="Open setup and help guide" title="Setup and help">?</button>
     </header>
 
@@ -287,8 +290,26 @@
       </div>
     </dialog>
     <script src="/monitor/date-time-sort.js"></script>
-    <script src="/monitor/app.js" defer></script>
-    <script type="module" src="/monitor/usage-timeline.js"></script>
-    <script type="module" src="/monitor/monitor-ux-prototypes.js"></script>
+    <script>
+      const routeParams = new URLSearchParams(location.search);
+      const prototypeMonitorRoute = routeParams.get("prototype") === "monitor";
+
+      if (prototypeMonitorRoute) {
+        const prototypeScript = document.createElement("script");
+        prototypeScript.type = "module";
+        prototypeScript.src = "/monitor/monitor-ux-prototypes.js";
+        document.body.append(prototypeScript);
+      } else {
+        const appScript = document.createElement("script");
+        appScript.src = "/monitor/app.js";
+        appScript.defer = true;
+        document.body.append(appScript);
+
+        const timelineScript = document.createElement("script");
+        timelineScript.type = "module";
+        timelineScript.src = "/monitor/usage-timeline.js";
+        document.body.append(timelineScript);
+      }
+    </script>
   </body>
 </html>

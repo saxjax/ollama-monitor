@@ -124,6 +124,20 @@ function initialState({ includeHistoricalData = true } = {}) {
   };
 }
 
+function currentMonthClientCredits() {
+  const now = new Date();
+  const prefix = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const events = usageTimelineStore?.snapshot()?.usageEvents ?? [];
+  let sum = 0;
+  let count = 0;
+  for (const event of events) {
+    if (!event.timing?.usageAt?.startsWith(prefix)) continue;
+    const value = event.measurements?.nativeUnit?.value;
+    if (Number.isFinite(value)) { sum += value; count += 1; }
+  }
+  return count > 0 ? sum : null;
+}
+
 function copilotDashboardState(usage) {
   const traffic = copilotCapture?.snapshot() || { active: [], history: [] };
   const records = [...traffic.active, ...traffic.history].filter((item) => item.provider === "github-copilot");
@@ -131,14 +145,18 @@ function copilotDashboardState(usage) {
   const forecast = forecastCopilotUsage(records, usage.monthlyBudgetUsd, new Date(), authoritativeSpend, usage.tokenPriceUsdPerMillion);
   const copilotTokens = summarizeCopilotTokens(records);
   const ollamaRecords = [...requests.values(), ...history];
-  const fallback = usage.status !== "ready" && forecast.requestCount > 0;
+  const clientCredits = usage.status !== "ready" ? currentMonthClientCredits() : null;
+  const fallback = usage.status !== "ready" && (clientCredits != null || forecast.requestCount > 0);
   const estimatedCost = fallback ? forecast.costUsd : usage.estimatedCost;
-  const usedCredits = fallback ? forecast.credits : usage.usedCredits;
+  let usedCredits = usage.usedCredits;
+  if (usage.status !== "ready") usedCredits = clientCredits ?? forecast.credits;
   const monthlyBudgetUsd = usage.monthlyBudgetUsd;
+  let fallbackDetail = "GitHub billing is unavailable; showing a local token-priced estimate.";
+  if (clientCredits != null) fallbackDetail = "GitHub billing is unavailable; showing client-observed credits from local journals.";
   return {
     ...usage,
     status: fallback ? "estimated" : usage.status,
-    detail: fallback ? "GitHub billing is unavailable; showing a local token-priced estimate." : usage.detail,
+    detail: fallback ? fallbackDetail : usage.detail,
     estimatedCost,
     usedCredits,
     budgetUsedPercent: monthlyBudgetUsd && Number.isFinite(estimatedCost) ? (estimatedCost / monthlyBudgetUsd) * 100 : usage.budgetUsedPercent,

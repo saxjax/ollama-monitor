@@ -9,24 +9,34 @@ export const PROTOTYPE_ID = "monitor-ux-2026-08";
 
 const COMMENT_LIMIT = 10_000;
 const ACTIVITY_LIMIT = 10_000;
-const VARIANT_KEYS = new Set(["A", "B", "C", "D", "E"]);
-const SECTION_IDS = ["timeline", "spikes", "evidence", "system", "sessions", "resources", "accumulated", "provider-evidence"];
+const PREFERRED_VARIANT_KEYS = new Set(["A0", "I", "B", "C", "E"]);
+const SOURCE_VARIANT_KEYS = new Set(["A0", "I", "B", "C", "E"]);
+const SECTION_IDS = [
+  "timeline",
+  "spikes",
+  "evidence",
+  "system",
+  "sessions",
+  "resources",
+  "accumulated",
+  "provider-evidence",
+];
 
 function defaultPreferredView() {
   return {
     mode: "classic",
-    variant: "A",
+    variant: "I",
     layout: {
-      shellVariant: "A",
+      shellVariant: "I",
       sections: [
-        { id: "timeline", sourceVariant: "A", enabled: true },
-        { id: "spikes", sourceVariant: "B", enabled: true },
-        { id: "evidence", sourceVariant: "E", enabled: true },
-        { id: "system", sourceVariant: "C", enabled: true },
-        { id: "sessions", sourceVariant: "A", enabled: true },
-        { id: "resources", sourceVariant: "C", enabled: true },
-        { id: "accumulated", sourceVariant: "B", enabled: true },
-        { id: "provider-evidence", sourceVariant: "E", enabled: true },
+        { id: "timeline", sourceVariant: "I", enabled: true },
+        { id: "spikes", sourceVariant: "I", enabled: true },
+        { id: "evidence", sourceVariant: "I", enabled: true },
+        { id: "system", sourceVariant: "A0", enabled: true },
+        { id: "sessions", sourceVariant: "A0", enabled: true },
+        { id: "resources", sourceVariant: "A0", enabled: true },
+        { id: "accumulated", sourceVariant: "A0", enabled: true },
+        { id: "provider-evidence", sourceVariant: "I", enabled: true },
       ],
     },
   };
@@ -38,7 +48,9 @@ function text(value, maximum = 200) {
 }
 
 function instant(value, fallback = new Date().toISOString()) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : fallback;
+  return typeof value === "string" && Number.isFinite(Date.parse(value))
+    ? new Date(value).toISOString()
+    : fallback;
 }
 
 function emptyState() {
@@ -58,19 +70,44 @@ function emptyState() {
 function sanitizeReviewer(candidate, fallback = {}) {
   return {
     id: text(candidate?.id, 100) || fallback.id || randomUUID(),
-    name: typeof candidate?.name === "string" ? text(candidate.name, 120) : (fallback.name || ""),
-    team: typeof candidate?.team === "string" ? text(candidate.team, 120) : (fallback.team || ""),
+    name:
+      typeof candidate?.name === "string"
+        ? text(candidate.name, 120)
+        : fallback.name || "",
+    team:
+      typeof candidate?.team === "string"
+        ? text(candidate.team, 120)
+        : fallback.team || "",
   };
 }
 
 function sanitizeContext(candidate) {
   if (!candidate || typeof candidate !== "object") return {};
-  return Object.fromEntries(["month", "unit", "day", "slot", "session", "zoom", "provider", "origin", "model", "variantVisits", "variantActiveMs", "targetUses"]
-    .map((key) => [key, text(candidate[key], 240)])
-    .filter(([, value]) => value));
+  return Object.fromEntries(
+    [
+      "month",
+      "unit",
+      "day",
+      "slot",
+      "session",
+      "zoom",
+      "provider",
+      "origin",
+      "model",
+      "variantVisits",
+      "variantActiveMs",
+      "targetUses",
+    ]
+      .map((key) => [key, text(candidate[key], 240)])
+      .filter(([, value]) => value),
+  );
 }
 
-function sanitizeComment(candidate, fallbackAuthor, now = new Date().toISOString()) {
+function sanitizeComment(
+  candidate,
+  fallbackAuthor,
+  now = new Date().toISOString(),
+) {
   const body = text(candidate?.body, 4_000);
   const variant = text(candidate?.variant, 20).toUpperCase();
   const targetId = text(candidate?.target?.id, 300);
@@ -85,7 +122,11 @@ function sanitizeComment(candidate, fallbackAuthor, now = new Date().toISOString
       label: text(candidate.target?.label, 240) || targetId,
     },
     context: sanitizeContext(candidate.context),
-    sentiment: ["works", "problem", "idea", "question"].includes(candidate.sentiment) ? candidate.sentiment : "idea",
+    sentiment: ["works", "problem", "idea", "question"].includes(
+      candidate.sentiment,
+    )
+      ? candidate.sentiment
+      : "idea",
     body,
     author: sanitizeReviewer(candidate.author, fallbackAuthor),
     createdAt: instant(candidate.createdAt, now),
@@ -93,14 +134,21 @@ function sanitizeComment(candidate, fallbackAuthor, now = new Date().toISOString
   };
 }
 
-function sanitizeActivity(candidate, installationId, now = new Date().toISOString()) {
+function sanitizeActivity(
+  candidate,
+  installationId,
+  now = new Date().toISOString(),
+) {
   const variant = text(candidate?.variant, 20).toUpperCase();
   const feature = text(candidate?.feature, 160);
   if (!variant || !feature) return null;
   const targetId = text(candidate?.targetId, 300);
-  const sourceInstallationId = text(candidate?.installationId, 120) || installationId;
+  const sourceInstallationId =
+    text(candidate?.installationId, 120) || installationId;
   return {
-    id: text(candidate?.id, 500) || `${sourceInstallationId}:${variant}:${feature}:${targetId || "all"}`,
+    id:
+      text(candidate?.id, 500) ||
+      `${sourceInstallationId}:${variant}:${feature}:${targetId || "all"}`,
     installationId: sourceInstallationId,
     variant,
     feature,
@@ -114,35 +162,66 @@ function sanitizeActivity(candidate, installationId, now = new Date().toISOStrin
 
 function sanitizePreferredView(candidate) {
   const fallback = defaultPreferredView();
-  const mode = ["classic", "variant", "custom"].includes(candidate?.mode) ? candidate.mode : fallback.mode;
-  const variant = VARIANT_KEYS.has(candidate?.variant) ? candidate.variant : fallback.variant;
-  const shellVariant = VARIANT_KEYS.has(candidate?.layout?.shellVariant) ? candidate.layout.shellVariant : fallback.layout.shellVariant;
-  const supplied = Array.isArray(candidate?.layout?.sections) ? candidate.layout.sections : fallback.layout.sections;
+  const mode = ["classic", "variant", "custom"].includes(candidate?.mode)
+    ? candidate.mode
+    : fallback.mode;
+  const variant = PREFERRED_VARIANT_KEYS.has(candidate?.variant)
+    ? candidate.variant
+    : fallback.variant;
+  const shellVariant = SOURCE_VARIANT_KEYS.has(candidate?.layout?.shellVariant)
+    ? candidate.layout.shellVariant
+    : fallback.layout.shellVariant;
+  const supplied = Array.isArray(candidate?.layout?.sections)
+    ? candidate.layout.sections
+    : fallback.layout.sections;
   const byId = new Map();
   for (const item of supplied) {
     if (!SECTION_IDS.includes(item?.id) || byId.has(item.id)) continue;
     byId.set(item.id, {
       id: item.id,
-      sourceVariant: VARIANT_KEYS.has(item.sourceVariant) ? item.sourceVariant : variant,
-      enabled: ["timeline", "evidence", "system"].includes(item.id) ? true : item.enabled !== false,
+      sourceVariant: SOURCE_VARIANT_KEYS.has(item.sourceVariant)
+        ? item.sourceVariant
+        : fallback.layout.shellVariant,
+      enabled: ["timeline", "evidence", "system"].includes(item.id)
+        ? true
+        : item.enabled !== false,
     });
   }
-  for (const item of fallback.layout.sections) if (!byId.has(item.id)) byId.set(item.id, item);
-  return { mode, variant, layout: { shellVariant, sections: [...byId.values()] } };
+  for (const item of fallback.layout.sections)
+    if (!byId.has(item.id)) byId.set(item.id, item);
+  return {
+    mode,
+    variant,
+    layout: { shellVariant, sections: [...byId.values()] },
+  };
 }
 
 function sanitizeLoaded(candidate) {
   const fallback = emptyState();
-  if (candidate?.schemaVersion !== PROTOTYPE_FEEDBACK_SCHEMA_VERSION) return fallback;
-  const installationId = text(candidate.installationId, 120) || fallback.installationId;
+  if (candidate?.schemaVersion !== PROTOTYPE_FEEDBACK_SCHEMA_VERSION)
+    return fallback;
+  const installationId =
+    text(candidate.installationId, 120) || fallback.installationId;
   const reviewer = sanitizeReviewer(candidate.reviewer, fallback.reviewer);
   return {
     ...fallback,
     installationId,
     reviewer,
-    comments: (Array.isArray(candidate.comments) ? candidate.comments : []).map((item) => sanitizeComment(item, reviewer)).filter(Boolean).slice(-COMMENT_LIMIT),
-    activity: (Array.isArray(candidate.activity) ? candidate.activity : []).map((item) => sanitizeActivity(item, installationId)).filter(Boolean).slice(-ACTIVITY_LIMIT),
-    importedBundles: (Array.isArray(candidate.importedBundles) ? candidate.importedBundles : []).map((item) => text(item, 120)).filter(Boolean).slice(-1_000),
+    comments: (Array.isArray(candidate.comments) ? candidate.comments : [])
+      .map((item) => sanitizeComment(item, reviewer))
+      .filter(Boolean)
+      .slice(-COMMENT_LIMIT),
+    activity: (Array.isArray(candidate.activity) ? candidate.activity : [])
+      .map((item) => sanitizeActivity(item, installationId))
+      .filter(Boolean)
+      .slice(-ACTIVITY_LIMIT),
+    importedBundles: (Array.isArray(candidate.importedBundles)
+      ? candidate.importedBundles
+      : []
+    )
+      .map((item) => text(item, 120))
+      .filter(Boolean)
+      .slice(-1_000),
     preferredView: sanitizePreferredView(candidate.preferredView),
     updatedAt: instant(candidate.updatedAt),
   };
@@ -152,8 +231,12 @@ function clone(value) {
   return structuredClone(value);
 }
 
-export async function createPrototypeFeedbackStore({ dataDir, fileName = "prototype-feedback-v1.json" } = {}) {
-  if (!dataDir) throw new Error("createPrototypeFeedbackStore requires dataDir");
+export async function createPrototypeFeedbackStore({
+  dataDir,
+  fileName = "prototype-feedback-v1.json",
+} = {}) {
+  if (!dataDir)
+    throw new Error("createPrototypeFeedbackStore requires dataDir");
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dataDir, fileName);
   let state = emptyState();
@@ -168,7 +251,10 @@ export async function createPrototypeFeedbackStore({ dataDir, fileName = "protot
     state.updatedAt = new Date().toISOString();
     writes = writes.then(async () => {
       const temporaryPath = `${filePath}.${process.pid}.tmp`;
-      await writeFile(temporaryPath, `${JSON.stringify(state)}\n`, { encoding: "utf8", mode: 0o600 });
+      await writeFile(temporaryPath, `${JSON.stringify(state)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
       await chmod(temporaryPath, 0o600);
       await rename(temporaryPath, filePath);
       await chmod(filePath, 0o600);
@@ -191,9 +277,15 @@ export async function createPrototypeFeedbackStore({ dataDir, fileName = "protot
     },
     async addComment(candidate) {
       const comment = sanitizeComment(candidate, state.reviewer);
-      if (!comment) throw new Error("A comment, variant, and review target are required");
+      if (!comment)
+        throw new Error("A comment, variant, and review target are required");
       const index = state.comments.findIndex((item) => item.id === comment.id);
-      if (index >= 0) state.comments[index] = { ...state.comments[index], ...comment, createdAt: state.comments[index].createdAt };
+      if (index >= 0)
+        state.comments[index] = {
+          ...state.comments[index],
+          ...comment,
+          createdAt: state.comments[index].createdAt,
+        };
       else state.comments.push(comment);
       state.comments = state.comments.slice(-COMMENT_LIMIT);
       await persist();
@@ -212,47 +304,83 @@ export async function createPrototypeFeedbackStore({ dataDir, fileName = "protot
         const delta = sanitizeActivity(candidate, state.installationId, now);
         if (!delta) continue;
         const existing = byId.get(delta.id);
-        byId.set(delta.id, existing ? {
-          ...existing,
-          count: existing.count + delta.count,
-          activeMs: existing.activeMs + delta.activeMs,
-          lastAt: now,
-        } : delta);
+        byId.set(
+          delta.id,
+          existing
+            ? {
+                ...existing,
+                count: existing.count + delta.count,
+                activeMs: existing.activeMs + delta.activeMs,
+                lastAt: now,
+              }
+            : delta,
+        );
       }
       state.activity = [...byId.values()].slice(-ACTIVITY_LIMIT);
       await persist();
       return clone(state);
     },
     async importBundle(candidate) {
-      if (candidate?.schemaVersion !== PROTOTYPE_FEEDBACK_SCHEMA_VERSION || candidate?.prototypeId !== PROTOTYPE_ID) {
-        throw new Error("This is not a compatible Saxjax prototype review bundle");
+      if (
+        candidate?.schemaVersion !== PROTOTYPE_FEEDBACK_SCHEMA_VERSION ||
+        candidate?.prototypeId !== PROTOTYPE_ID
+      ) {
+        throw new Error(
+          "This is not a compatible Saxjax prototype review bundle",
+        );
       }
       const bundleId = text(candidate.bundleId, 120) || randomUUID();
       const fallbackAuthor = sanitizeReviewer(candidate.reviewer);
-      const commentById = new Map(state.comments.map((item) => [item.id, item]));
-      const activityById = new Map(state.activity.map((item) => [item.id, item]));
-      for (const raw of (Array.isArray(candidate.comments) ? candidate.comments : []).slice(0, COMMENT_LIMIT)) {
+      const commentById = new Map(
+        state.comments.map((item) => [item.id, item]),
+      );
+      const activityById = new Map(
+        state.activity.map((item) => [item.id, item]),
+      );
+      for (const raw of (Array.isArray(candidate.comments)
+        ? candidate.comments
+        : []
+      ).slice(0, COMMENT_LIMIT)) {
         const item = sanitizeComment(raw, fallbackAuthor);
         if (!item) continue;
         const existing = commentById.get(item.id);
-        if (!existing || Date.parse(item.updatedAt) >= Date.parse(existing.updatedAt)) commentById.set(item.id, item);
+        if (
+          !existing ||
+          Date.parse(item.updatedAt) >= Date.parse(existing.updatedAt)
+        )
+          commentById.set(item.id, item);
       }
-      for (const raw of (Array.isArray(candidate.activity) ? candidate.activity : []).slice(0, ACTIVITY_LIMIT)) {
+      for (const raw of (Array.isArray(candidate.activity)
+        ? candidate.activity
+        : []
+      ).slice(0, ACTIVITY_LIMIT)) {
         const item = sanitizeActivity(raw, text(candidate.installationId, 120));
         if (!item) continue;
         const existing = activityById.get(item.id);
         // Exported activity is cumulative. Max makes repeated and overlapping imports idempotent.
-        activityById.set(item.id, existing ? {
-          ...existing,
-          count: Math.max(existing.count, item.count),
-          activeMs: Math.max(existing.activeMs, item.activeMs),
-          firstAt: Date.parse(existing.firstAt) <= Date.parse(item.firstAt) ? existing.firstAt : item.firstAt,
-          lastAt: Date.parse(existing.lastAt) >= Date.parse(item.lastAt) ? existing.lastAt : item.lastAt,
-        } : item);
+        activityById.set(
+          item.id,
+          existing
+            ? {
+                ...existing,
+                count: Math.max(existing.count, item.count),
+                activeMs: Math.max(existing.activeMs, item.activeMs),
+                firstAt:
+                  Date.parse(existing.firstAt) <= Date.parse(item.firstAt)
+                    ? existing.firstAt
+                    : item.firstAt,
+                lastAt:
+                  Date.parse(existing.lastAt) >= Date.parse(item.lastAt)
+                    ? existing.lastAt
+                    : item.lastAt,
+              }
+            : item,
+        );
       }
       state.comments = [...commentById.values()].slice(-COMMENT_LIMIT);
       state.activity = [...activityById.values()].slice(-ACTIVITY_LIMIT);
-      if (!state.importedBundles.includes(bundleId)) state.importedBundles.push(bundleId);
+      if (!state.importedBundles.includes(bundleId))
+        state.importedBundles.push(bundleId);
       state.importedBundles = state.importedBundles.slice(-1_000);
       await persist();
       return clone(state);
@@ -266,11 +394,19 @@ export async function createPrototypeFeedbackStore({ dataDir, fileName = "protot
         installationId: state.installationId,
         reviewer: clone(state.reviewer),
         comments: clone(state.comments),
-        activity: clone(state.activity.filter((item) => item.installationId === state.installationId)),
+        activity: clone(
+          state.activity.filter(
+            (item) => item.installationId === state.installationId,
+          ),
+        ),
       };
     },
     async reset() {
-      const identity = { installationId: state.installationId, reviewer: state.reviewer, preferredView: state.preferredView };
+      const identity = {
+        installationId: state.installationId,
+        reviewer: state.reviewer,
+        preferredView: state.preferredView,
+      };
       state = { ...emptyState(), ...identity };
       await persist();
       return clone(state);

@@ -10,7 +10,7 @@ test("persists a sanitized local preferred view without adding it to review expo
   const store = await createPrototypeFeedbackStore({ dataDir });
   const saved = await store.setPreferredView({
     mode: "custom",
-    variant: "D",
+    variant: "I",
     layout: {
       shellVariant: "C",
       sections: [
@@ -25,12 +25,13 @@ test("persists a sanitized local preferred view without adding it to review expo
   });
 
   assert.equal(saved.preferredView.mode, "custom");
+  assert.equal(saved.preferredView.variant, "I");
   assert.equal(saved.preferredView.layout.shellVariant, "C");
   assert.deepEqual(saved.preferredView.layout.sections.slice(0, 4), [
     { id: "spikes", sourceVariant: "B", enabled: false },
     { id: "timeline", sourceVariant: "E", enabled: true },
-    { id: "system", sourceVariant: "A", enabled: true },
-    { id: "evidence", sourceVariant: "D", enabled: true },
+    { id: "system", sourceVariant: "B", enabled: true },
+    { id: "evidence", sourceVariant: "B", enabled: true },
   ]);
   assert.equal(new Set(saved.preferredView.layout.sections.map((item) => item.id)).size, 8);
   assert.equal(Object.hasOwn(store.exportBundle(), "preferredView"), false);

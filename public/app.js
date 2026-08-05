@@ -411,6 +411,48 @@ function expandOnly(target) {
   if (target) setCollapsed(target, false);
 }
 
+// Records the first visible exchange and its offset from the stream's top edge.
+function captureScrollAnchor() {
+  const streamTop = stream.getBoundingClientRect().top;
+  for (const element of stream.querySelectorAll(".exchange")) {
+    if (element.hidden) continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.bottom > streamTop) return { element, offset: rect.top - streamTop };
+  }
+  return null;
+}
+
+function restoreScrollAnchor(anchor) {
+  if (!anchor?.element.isConnected || anchor.element.hidden) return;
+  const streamTop = stream.getBoundingClientRect().top;
+  const currentOffset = anchor.element.getBoundingClientRect().top - streamTop;
+  stream.scrollTop += currentOffset - anchor.offset;
+}
+
+// Keeps the user's scroll position and focus stable across DOM mutations.
+function preserveViewport(mutate) {
+  if (restoringView) {
+    mutate();
+    return;
+  }
+  const active = document.activeElement;
+  const trackFocus = active && active !== document.body && stream.contains(active);
+  const activeScroll = trackFocus ? active.scrollTop : 0;
+  const anchor = captureScrollAnchor();
+  mutate();
+  restoreScrollAnchor(anchor);
+  if (trackFocus && active.isConnected && document.activeElement !== active) {
+    active.focus({ preventScroll: true });
+    active.scrollTop = activeScroll;
+  }
+}
+
+function nearFollowEdge(threshold = 24) {
+  return dateSortDirection === "desc"
+    ? stream.scrollTop <= threshold
+    : stream.scrollHeight - stream.scrollTop - stream.clientHeight <= threshold;
+}
+
 function stringHash(value) {
   let hash = 0;
   for (const character of String(value)) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
@@ -447,9 +489,13 @@ function registerSession(item) {
 
 function applySessionFilter(openNewest = false) {
   const selected = sessionFilter.value;
-  exchanges.forEach((element) => {
-    element.hidden = selected !== "all" && element.dataset.sessionId !== selected;
-  });
+  const applyHidden = () => {
+    exchanges.forEach((element) => {
+      element.hidden = selected !== "all" && element.dataset.sessionId !== selected;
+    });
+  };
+  if (openNewest) applyHidden();
+  else preserveViewport(applyHidden);
   if (openNewest) {
     const visible = [...stream.querySelectorAll(".exchange")].filter((element) => !element.hidden);
     const newestVisible = dateSortDirection === "desc" ? visible[0] : visible.at(-1);
@@ -458,10 +504,12 @@ function applySessionFilter(openNewest = false) {
 }
 
 function sortExchangeRows() {
-  const rows = [...stream.querySelectorAll(".exchange")].sort((left, right) =>
+  const rows = [...stream.querySelectorAll(".exchange")];
+  const sorted = [...rows].sort((left, right) =>
     globalThis.SaxjaxDateTimeSort.compareDateTimes(left, right, dateSortDirection, (element) => element.dataset.startedAt),
   );
-  rows.forEach((element) => stream.append(element));
+  if (rows.every((element, index) => element === sorted[index])) return;
+  preserveViewport(() => sorted.forEach((element) => stream.append(element)));
 }
 
 function estimateTokens(characterCount, messageCount = 0) {
@@ -679,7 +727,7 @@ eventSource.addEventListener("request-started", (event) => {
   const element = ensureExchange(item, true);
   sortExchangeRows();
   applySessionFilter();
-  if (element.hidden) setCollapsed(element, true);
+  if (element.hidden || !autofollow.checked) setCollapsed(element, true);
   else {
     expandOnly(element);
     follow();
@@ -767,7 +815,7 @@ sessionFilter.addEventListener("change", () => {
 
 autofollow.addEventListener("change", persistViewState);
 stream.addEventListener("scroll", () => {
-  if (!restoringView && stream.scrollTop > 8 && autofollow.checked) autofollow.checked = false;
+  if (!restoringView && autofollow.checked && !nearFollowEdge()) autofollow.checked = false;
   scheduleViewStatePersistence();
 }, { passive: true });
 window.addEventListener("scroll", scheduleViewStatePersistence, { passive: true });

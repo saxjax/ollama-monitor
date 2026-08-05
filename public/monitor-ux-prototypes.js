@@ -3,8 +3,6 @@
 // separate prototype review layer persists only comments and aggregate usage.
 
 const params = new URLSearchParams(location.search);
-const prototypeEnabled = params.get("prototype") === "monitor";
-const labEnabled = prototypeEnabled && params.get("surface") !== "default";
 
 const VARIANTS = {
   A0: "Classic monitor",
@@ -1479,11 +1477,27 @@ function CustomView(model, layout) {
   </div>`;
 }
 
-async function startMonitorPrototype() {
-  document.documentElement.classList.add("monitor-ux-prototype-active");
-  const root = document.createElement("div");
+// Resolves with the latest full connect state from the shared store, waiting
+// for the first one if the stream has not delivered it yet.
+function waitForStoreState(store) {
+  const existing = store.getLatest("state");
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    const off = store.on("state", (state) => { off(); resolve(state); }, { replay: true });
+  });
+}
+
+async function startMonitorPrototype(config = {}) {
+  const store = window.SaxjaxMonitorStore;
+  const labEnabled = config.lab === true;
+  const surfaceName = labEnabled ? "lab" : "month";
+  let dirty = false;
+  const surfaceActive = () => document.body.dataset.surface === surfaceName;
+
+  const existingRoot = document.getElementById("monitor-ux-prototype-root");
+  const root = existingRoot || document.createElement("div");
   root.id = "monitor-ux-prototype-root";
-  document.body.prepend(root);
+  if (!existingRoot) document.body.prepend(root);
   root.className = "monitor-ux-root is-loading";
   root.innerHTML = `<section class="mux-loading" role="status" aria-live="polite"><h1>Opening monitor</h1><p data-loading-stage>Starting local monitor surface...</p><small data-loading-detail>Loading local timeline, live state, and preferences.</small></section>`;
 
@@ -1492,27 +1506,15 @@ async function startMonitorPrototype() {
     root.querySelector("[data-loading-detail]").textContent = detail;
   };
 
-  // Prototype mode owns rendering and data flow. Remove the classic shell to
-  // prevent duplicated surfaces and event work from accumulating in memory.
-  [
-    document.querySelector("body > .grain"),
-    document.querySelector("body > .masthead"),
-    document.querySelector("body > main"),
-  ].filter(Boolean).forEach((node) => node.remove());
-
+  // Historical evidence and live state both arrive on the shared full stream,
+  // so the prototype reads them from the store instead of issuing its own
+  // fetches. Only the prototype-review feedback still loads on demand.
   setLoadingStage("Contacting local monitor APIs...", "Reading usage timeline and live state from this Mac.");
-  const [timelineResponse, stateResponse, feedbackResponse] = await Promise.all([
-    fetch("/monitor/api/usage-timeline", { cache: "no-store" }),
-    // The durable timeline already supplies historical evidence. Fetch only
-    // active gateway traffic here so the same multi-megabyte history is not
-    // downloaded and parsed a second time during prototype startup.
-    fetch("/monitor/api/state?compact=1", { cache: "no-store" }),
-    fetch("/monitor/api/prototype-feedback", { cache: "no-store" }),
-  ]);
+  const liveStateInitial = await waitForStoreState(store);
   setLoadingStage("Decoding local records...", "Large local history can take longer to decode.");
-  const timeline = await timelineResponse.json();
-  let feedbackSnapshot = await feedbackResponse.json();
-  let liveState = await stateResponse.json();
+  const timeline = store.getLatest("usage-timeline") || { usageEvents: [] };
+  let feedbackSnapshot = await (await fetch("/monitor/api/prototype-feedback", { cache: "no-store" })).json();
+  let liveState = liveStateInitial;
   const eventCount = Array.isArray(timeline?.usageEvents) ? timeline.usageEvents.length : 0;
   setLoadingStage("Preparing timeline model...", `${eventCount.toLocaleString()} usage records found locally.`);
   let events = normalizeEvents(timeline);
@@ -1529,14 +1531,14 @@ async function startMonitorPrototype() {
   const openPreferred = params.get("view") === "preferred";
   let customMode = params.get("layout") === "custom" || (openPreferred && preferredView.mode === "custom");
   const requestedVariant = params.get("variant")?.toUpperCase();
-  let variant = VARIANTS[requestedVariant] ? requestedVariant : openPreferred && preferredView.mode === "variant" && VARIANTS[preferredView.variant] ? preferredView.variant : customMode ? normalizedCustomLayout(preferredView.layout).shellVariant : "B";
+  let variant = VARIANTS[requestedVariant] ? requestedVariant : openPreferred && preferredView.mode === "variant" && VARIANTS[preferredView.variant] ? preferredView.variant : customMode ? normalizedCustomLayout(preferredView.layout).shellVariant : (config.variant && VARIANTS[config.variant] ? config.variant : "B");
   if (requestedVariant === "G") customMode = true;
   let unit = ["tokens", "credits", "dollars"].includes(params.get("unit")) ? params.get("unit") : "credits";
   let month = months.includes(params.get("month")) ? params.get("month") : months.reduce((latest, item) => events.filter((event) => event.month === item).length >= 10 ? item : latest, months.at(-1));
   let referenceMonth = months.includes(params.get("reference")) && params.get("reference") !== month ? params.get("reference") : null;
   let selectedDay = params.get("day");
   let selectedSlotId = params.get("slot");
-  let selectedSessionId = params.get("session");
+  let selectedSessionId = store.getSelectedSessionId() || params.get("session");
   let selectedEvidenceEventId = params.get("request");
   let openPromptEventId = params.get("prompt");
   let zoom = ["month", "day", "slot", "session"].includes(params.get("zoom")) ? params.get("zoom") : "month";
@@ -1625,6 +1627,8 @@ async function startMonitorPrototype() {
   }
 
   function render() {
+    // Skip painting while another surface is showing; repaint on activation.
+    if (!surfaceActive()) { dirty = true; return; }
     const openPaper = root.querySelector(".mux-evidence-paper[open]");
     const openPaperTop = openPaper?.getBoundingClientRect().top;
     const openSheet = openPaper?.querySelector(".mux-evidence-sheet");
@@ -1653,9 +1657,9 @@ async function startMonitorPrototype() {
     syncUrl();
     const views = { A0: VariantA0, B: VariantB, C: VariantC, E: VariantE, I: VariantI };
     root.className = `monitor-ux-root reading-${prototypeDetailLevel} ${customMode ? "variant-custom" : `variant-${variant.toLowerCase()}`}`;
-    const browserLabEntry = labEnabled
-      ? ""
-      : `<a class="mux-lab-entry" href="/monitor/">Classic monitor</a>`;
+    // The surface switcher owns cross-surface navigation now, so the prototype
+    // no longer renders its own hard link back to the classic monitor.
+    const browserLabEntry = "";
     const readingDetailControl = detailToggle();
     const view = customMode ? CustomView(current, preferredView.layout) : views[variant](current);
     if (!customMode && variant === "A0") {
@@ -1714,6 +1718,9 @@ async function startMonitorPrototype() {
   }
 
   function syncUrl() {
+    // Only the deep-linkable lab surface owns the URL; the shell owns it for the
+    // primary Classic and Run the month surfaces.
+    if (!labEnabled) return;
     params.set("prototype", "monitor");
     params.set("variant", variant);
     params.delete("view");
@@ -1867,6 +1874,7 @@ async function startMonitorPrototype() {
     root.querySelectorAll('[data-action="session"]').forEach((element) => element.addEventListener("click", () => {
       const jumpToForensics = element.dataset.jump === "forensics";
       selectedSessionId = element.dataset.session;
+      store.setSelectedSessionId(selectedSessionId);
       selectedEvidenceEventId = element.dataset.event || null;
       const first = model().view.monthEvents.find((event) => event.sessionId === selectedSessionId);
       if (first) { selectedDay = first.day; selectedSlotId = `${first.day}:${first.bucket}`; }
@@ -2009,11 +2017,22 @@ async function startMonitorPrototype() {
     render();
   });
 
-  const stream = new EventSource("/monitor/events?compact=1");
-  stream.addEventListener("state", (event) => { liveState = JSON.parse(event.data); rememberSystemSample(); updateLive(); });
-  stream.addEventListener("metrics", (event) => { liveState.metrics = JSON.parse(event.data); rememberSystemSample(); updateLive(); });
-  stream.addEventListener("request-started", (event) => {
-    const live = normalizeLiveRequest(JSON.parse(event.data));
+  // Cross-surface session selection: reflect store changes and repaint (or mark
+  // dirty for repaint on activation) so a session picked in Classic stays picked.
+  store.on("selection", (id) => {
+    const next = typeof id === "string" && id ? id : null;
+    if (next === selectedSessionId) return;
+    selectedSessionId = next;
+    if (surfaceActive()) render(); else dirty = true;
+  });
+  window.addEventListener("saxjax-surface-change", () => {
+    if (surfaceActive() && dirty) { dirty = false; render(); }
+  });
+
+  store.on("state", (state) => { liveState = state; rememberSystemSample(); updateLive(); });
+  store.on("metrics", (metrics) => { liveState.metrics = metrics; rememberSystemSample(); updateLive(); });
+  store.on("request-started", (payload) => {
+    const live = normalizeLiveRequest(payload);
     if (!live) return;
     liveEvents.set(live.id, live);
     mergeLiveEvents();
@@ -2022,8 +2041,8 @@ async function startMonitorPrototype() {
     if (!month) month = live.month;
     render();
   });
-  stream.addEventListener("request-finished", (event) => {
-    const live = normalizeLiveRequest(JSON.parse(event.data));
+  store.on("request-finished", (payload) => {
+    const live = normalizeLiveRequest(payload);
     if (!live) return;
     liveEvents.set(live.id, live);
     mergeLiveEvents();
@@ -2032,16 +2051,16 @@ async function startMonitorPrototype() {
     if (!months.includes(month)) month = live.month;
     render();
   });
-  stream.addEventListener("usage-timeline", (event) => {
-    events = normalizeEvents(JSON.parse(event.data));
+  store.on("usage-timeline", (snapshot) => {
+    events = normalizeEvents(snapshot);
     mergeLiveEvents();
     months = [...new Set(events.map((item) => item.month))].sort();
     if (!months.length) months = [fallbackMonth];
     if (!months.includes(month)) month = months.at(-1);
     render();
   });
-  stream.addEventListener("copilot", (event) => {
-    liveState.copilot = JSON.parse(event.data);
+  store.on("copilot", (copilot) => {
+    liveState.copilot = copilot;
     render();
   });
 
@@ -2070,8 +2089,8 @@ async function startMonitorPrototype() {
     });
     if (params.get("studio") === "layout") feedbackLab.openStudio();
   }
-  stream.addEventListener("prototype-feedback", (event) => {
-    feedbackSnapshot = JSON.parse(event.data);
+  store.on("prototype-feedback", (snapshot) => {
+    feedbackSnapshot = snapshot;
     preferredView = feedbackSnapshot.preferredView || preferredView;
     feedbackLab?.update(feedbackSnapshot);
   });
@@ -2079,14 +2098,22 @@ async function startMonitorPrototype() {
   render();
 }
 
-if (prototypeEnabled) {
-  queueMicrotask(() => {
-    startMonitorPrototype().catch((error) => {
+// The surface shell owns lifecycle: it lazily loads this module and calls
+// ensureStarted once for the prototype surface it is showing (Run the month or
+// the lab). A single instance is fixed to that mode for the page load.
+let startedPromise = null;
+function ensureStarted(config = {}) {
+  if (!startedPromise) {
+    startedPromise = startMonitorPrototype(config).catch((error) => {
       document.documentElement.classList.add("monitor-ux-prototype-active");
       const root = document.querySelector("#monitor-ux-prototype-root") || document.body.appendChild(document.createElement("div"));
       root.id = "monitor-ux-prototype-root";
       root.style.cssText = "display:block;padding:40px;color:#f5d8cf;background:#1b1110;font:16px/1.5 ui-monospace,monospace;min-height:100vh";
       root.innerHTML = `<h1>Prototype failed to render</h1><pre>${escapeHtml(error?.stack || error)}</pre>`;
     });
-  });
+  }
+  return startedPromise;
 }
+
+window.SaxjaxMonitorSurfaces = window.SaxjaxMonitorSurfaces || {};
+window.SaxjaxMonitorSurfaces.prototype = { ensureStarted };

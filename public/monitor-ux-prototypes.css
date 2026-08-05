@@ -1,4 +1,7 @@
 /* PROTOTYPE — disposable styles for ?prototype=monitor. */
+/* The prototype root is warmed in the background under the Classic surface;
+   keep it hidden until the shell activates a prototype surface. */
+#monitor-ux-prototype-root { display: none; }
 .monitor-ux-prototype-active body { margin: 0; min-width: 320px; }
 .monitor-ux-prototype-active body > .grain,
 .monitor-ux-prototype-active body > .masthead,

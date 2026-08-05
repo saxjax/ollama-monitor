@@ -879,6 +879,12 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/monitor/date-time-sort.js") {
     return serveAsset(response, "date-time-sort.js", "text/javascript; charset=utf-8");
   }
+  if (requestUrl.pathname === "/monitor/monitor-store.js") {
+    return serveAsset(response, "monitor-store.js", "text/javascript; charset=utf-8");
+  }
+  if (requestUrl.pathname === "/monitor/monitor-shell.js") {
+    return serveAsset(response, "monitor-shell.js", "text/javascript; charset=utf-8");
+  }
   if (requestUrl.pathname === "/monitor/monitor-ux-prototypes.css") {
     return serveAsset(response, "monitor-ux-prototypes.css", "text/css; charset=utf-8");
   }

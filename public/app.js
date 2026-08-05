@@ -698,14 +698,21 @@ function resetHistoryView(state) {
   persistViewState();
 }
 
-const appLocationParams = new URLSearchParams(location.search);
-const explicitPrototypeVariant = appLocationParams.get("variant")?.toUpperCase();
-const compactPrototypeStream = appLocationParams.get("prototype") === "monitor"
-  && explicitPrototypeVariant
-  && explicitPrototypeVariant !== "A0";
-const eventSource = new EventSource(`/monitor/events${compactPrototypeStream ? "?compact=1" : ""}`);
-eventSource.addEventListener("state", (event) => {
-  const state = JSON.parse(event.data);
+const store = window.SaxjaxMonitorStore;
+
+// Applies the shared cross-surface session selection to the classic filter when
+// that session is present in this surface; otherwise the local view is left as
+// it is so an unknown id never blanks the stream.
+function syncSharedSelection() {
+  const id = store.getSelectedSessionId();
+  if (!id || sessionFilter.value === id) return;
+  if ([...sessionFilter.options].some((option) => option.value === id)) {
+    sessionFilter.value = id;
+    applySessionFilter(true);
+  }
+}
+
+store.on("state", (state) => {
   renderMetrics(state.metrics);
   renderCopilotUsage(state.copilot);
   $("#total-count").textContent = state.counters.total;
@@ -719,11 +726,12 @@ eventSource.addEventListener("state", (event) => {
     restoreViewState();
     initialStateRendered = true;
   }
-});
-eventSource.addEventListener("metrics", (event) => renderMetrics(JSON.parse(event.data)));
-eventSource.addEventListener("copilot", (event) => renderCopilotUsage(JSON.parse(event.data)));
-eventSource.addEventListener("request-started", (event) => {
-  const item = JSON.parse(event.data);
+  syncSharedSelection();
+}, { replay: true });
+store.on("metrics", (metrics) => renderMetrics(metrics), { replay: true });
+store.on("copilot", (copilot) => renderCopilotUsage(copilot), { replay: true });
+store.on("selection", () => syncSharedSelection());
+store.on("request-started", (item) => {
   const element = ensureExchange(item, true);
   sortExchangeRows();
   applySessionFilter();
@@ -733,8 +741,7 @@ eventSource.addEventListener("request-started", (event) => {
     follow();
   }
 });
-eventSource.addEventListener("token", (event) => {
-  const token = JSON.parse(event.data);
+store.on("token", (token) => {
   const element = exchanges.get(token.id);
   if (!element) return;
   const target = token.field === "thinking" ? element.querySelector(".thinking pre") : element.querySelector(".response pre");
@@ -742,11 +749,10 @@ eventSource.addEventListener("token", (event) => {
   target.textContent += token.value;
   updateLiveTokenEstimate(element);
 });
-eventSource.addEventListener("request-finished", (event) => {
-  const item = JSON.parse(event.data);
+store.on("request-finished", (item) => {
   updateExchange(ensureExchange(item), item);
 });
-eventSource.addEventListener("history-reset", (event) => resetHistoryView(JSON.parse(event.data)));
+store.on("history-reset", (state) => resetHistoryView(state));
 
 dateSort.addEventListener("change", () => {
   dateSortDirection = globalThis.SaxjaxDateTimeSort.normalize(dateSort.value);
@@ -811,6 +817,7 @@ sessionFilter.addEventListener("change", () => {
   applySessionFilter(true);
   follow();
   persistViewState();
+  store.setSelectedSessionId(sessionFilter.value === "all" ? null : sessionFilter.value);
 });
 
 autofollow.addEventListener("change", persistViewState);

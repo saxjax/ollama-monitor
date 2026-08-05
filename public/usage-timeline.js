@@ -83,22 +83,24 @@ function fixtureFrom(snapshot) {
   };
 }
 
-async function start() {
+async function snapshot() {
+  const buffered = window.SaxjaxMonitorStore?.getLatest?.("usage-timeline");
+  if (buffered) return buffered;
   const response = await fetch("/monitor/api/usage-timeline", { cache: "no-store" });
   if (!response.ok) throw new Error(`Timeline request failed (${response.status})`);
-  globalThis.__usageTimelinePrototypeFixture = fixtureFrom(await response.json());
+  return response.json();
+}
+
+async function start() {
+  globalThis.__usageTimelinePrototypeFixture = fixtureFrom(await snapshot());
   await import("/monitor/usage-timeline-prototype.js");
 }
 
-// Full-monitor prototypes own their timeline surface and fetch the same
-// durable evidence themselves. Avoid parsing and projecting the large journal
-// twice before the selected prototype can paint.
-const monitorPrototypeEnabled = new URLSearchParams(location.search).get("prototype") === "monitor";
-if (!monitorPrototypeEnabled) {
-  start().catch((error) => {
-    const host = document.createElement("section");
-    host.className = "timeline-prototype";
-    host.textContent = `Usage timeline unavailable: ${error.message}`;
-    document.querySelector(".workbench")?.before(host);
-  });
+try {
+  await start();
+} catch (error) {
+  const host = document.createElement("section");
+  host.className = "timeline-prototype";
+  host.textContent = `Usage timeline unavailable: ${error.message}`;
+  document.querySelector(".workbench")?.before(host);
 }

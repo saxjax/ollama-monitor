@@ -57,6 +57,12 @@ h1 span { color: var(--amber); font-family: var(--mono); font-size: .62em; margi
 .surface-link:last-child { border-right: 0; }
 .surface-link:hover, .surface-link:focus-visible { color: var(--paper); outline: none; }
 .surface-link.is-active, .surface-link[aria-current="page"] { color: var(--amber); background: rgba(255,176,0,.07); }
+/* Shared surface switcher injected by the shell; floats above every surface so
+   Classic and the prototype can be toggled without navigating. */
+#saxjax-surface-switch.shell-switch { position: fixed; top: 14px; right: 16px; z-index: 3000; background: rgba(8,9,12,.86); border-color: rgba(255,255,255,.22); border-radius: 4px; backdrop-filter: blur(6px); }
+#saxjax-surface-switch .surface-link { border: 0; border-right: 1px solid rgba(255,255,255,.15); background: none; cursor: pointer; font-family: inherit; }
+#saxjax-surface-switch .surface-link:last-child { border-right: 0; }
+#saxjax-surface-switch .surface-link-secondary { color: var(--cyan); }
 main { padding: 0 clamp(22px, 4vw, 64px) 52px; }
 .telemetry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-left: 1px solid var(--line); }
 .telemetry-dials { grid-template-columns: repeat(4, minmax(0, 1fr)); }

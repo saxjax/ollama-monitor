@@ -812,7 +812,7 @@ function evidence(model, limit = 24) {
       const reasoning = exchange ? readableCapture(exchange.thinking, "") : "";
       const canLoadJournal = Boolean(event.captureClient && event.journalSessionId && event.requestId);
       const isSelectedPaper = event.id === model.selectedEvidenceEventId;
-      return `<article style="--family:${ORIGIN_COLORS[event.origin] || ORIGIN_COLORS.other}"><details class="mux-evidence-paper" data-event-id="${escapeHtml(event.id)}" data-capture-client="${escapeHtml(event.captureClient || "")}" data-capture-session="${escapeHtml(event.journalSessionId || "")}" data-capture-request="${escapeHtml(event.requestId || "")}" data-paper-preview="${escapeHtml(event.prompt)}" data-inline-capture="${exchange ? "true" : "false"}" ${isSelectedPaper ? "open" : ""}><summary><span>Request ${String(index + 1).padStart(2, "0")}</span><div><b>${escapeHtml(event.model)} · ${escapeHtml(event.originLabel)}</b><p>${escapeHtml(event.prompt)}</p><small>${escapeHtml(event.source)}</small><em>${escapeHtml(event.providerLabel)} · ${escapeHtml(event.evidenceStatus)} ${escapeHtml(event.evidenceSource)} · ${escapeHtml(event.identityStrength)} identity${model.unit === "tokens" && (Number.isFinite(event.inputTokens) || Number.isFinite(event.outputTokens)) ? ` · ${event.inputTokens?.toLocaleString() || "—"} input / ${event.outputTokens?.toLocaleString() || "—"} output` : ""}</em></div><strong>${Number.isFinite(event[model.unit]) ? formatLabeledValue(event[model.unit], model.unit) : `— ${unitLabel(model.unit)} not measured`}</strong><i><span>FORENSICS</span><b>OPEN FORENSICS +</b></i></summary><div class="mux-evidence-sheet" data-loaded="${exchange ? "true" : "false"}"><header><span>FORENSICS · FULL LOCAL CAPTURE · REQUEST ${String(index + 1).padStart(2, "0")}</span><b>${escapeHtml(event.requestId || "No request identity")}</b><small data-paper-status>${exchange ? "Actual live capture loaded" : canLoadJournal ? "Open FORENSICS to read the original local journal" : "Only the durable timeline excerpt is available"}</small></header><div class="mux-paper-columns"><section><span>IN / COMPLETE LOCALLY AVAILABLE CONTENT</span><pre data-paper-input>${escapeHtml(incoming || event.prompt)}</pre></section><section><span>OUT / COMPLETE LOCALLY AVAILABLE CONTENT</span><pre data-paper-output>${escapeHtml(outgoing || (canLoadJournal ? "Loading when FORENSICS opens…" : "The complete output is not retained in this timeline record."))}</pre></section><section class="mux-paper-reasoning" ${reasoning ? "" : "hidden"}><span>REASONING / LOCALLY RETAINED</span><pre data-paper-reasoning>${escapeHtml(reasoning)}</pre></section></div><footer><button class="mux-copy-source" data-action="copy-source" data-event="${escapeHtml(event.id)}">Copy source reference</button><span>${escapeHtml(event.source)}</span><button class="mux-close-paper" data-action="close-forensics">CLOSE FORENSICS ↑</button></footer></div></details></article>`;
+      return `<article style="--family:${ORIGIN_COLORS[event.origin] || ORIGIN_COLORS.other}"><details class="mux-evidence-paper" data-event-id="${escapeHtml(event.id)}" data-capture-client="${escapeHtml(event.captureClient || "")}" data-capture-session="${escapeHtml(event.journalSessionId || "")}" data-capture-request="${escapeHtml(event.requestId || "")}" data-paper-preview="${escapeHtml(event.prompt)}" data-inline-capture="${exchange ? "true" : "false"}" ${isSelectedPaper ? "open" : ""}><summary><span>Request ${String(index + 1).padStart(2, "0")}</span><div><b>${escapeHtml(event.model)} · ${escapeHtml(event.originLabel)}</b><p>${escapeHtml(event.prompt)}</p><small>${escapeHtml(event.source)}</small><em>${escapeHtml(event.providerLabel)} · ${escapeHtml(event.evidenceStatus)} ${escapeHtml(event.evidenceSource)} · ${escapeHtml(event.identityStrength)} identity${model.unit === "tokens" && (Number.isFinite(event.inputTokens) || Number.isFinite(event.outputTokens)) ? ` · ${event.inputTokens?.toLocaleString() || "—"} input / ${event.outputTokens?.toLocaleString() || "—"} output` : ""}</em></div><strong>${Number.isFinite(event[model.unit]) ? formatLabeledValue(event[model.unit], model.unit) : `— ${unitLabel(model.unit)} not measured`}</strong><i><span>FORENSICS</span><b>OPEN FORENSICS +</b></i></summary><div class="mux-evidence-sheet" data-loaded="${exchange ? "true" : "false"}"><header><span>FORENSICS · FULL LOCAL CAPTURE · REQUEST ${String(index + 1).padStart(2, "0")}</span><b>${escapeHtml(event.requestId || "No request identity")}</b><small data-paper-status>${exchange ? "Actual live capture loaded" : canLoadJournal ? "Open FORENSICS to read the original local journal" : "Only the durable timeline excerpt is available"}</small></header><div class="mux-paper-columns"><details class="mux-paper-box" data-box="input" open><summary>IN / COMPLETE LOCALLY AVAILABLE CONTENT</summary><pre data-paper-input>${escapeHtml(incoming || event.prompt)}</pre></details><details class="mux-paper-box" data-box="output" open><summary>OUT / COMPLETE LOCALLY AVAILABLE CONTENT</summary><pre data-paper-output>${escapeHtml(outgoing || (canLoadJournal ? "Loading when FORENSICS opens…" : "The complete output is not retained in this timeline record."))}</pre></details><details class="mux-paper-box mux-paper-reasoning" data-box="reasoning" open ${reasoning ? "" : "hidden"}><summary>REASONING / LOCALLY RETAINED</summary><pre data-paper-reasoning>${escapeHtml(reasoning)}</pre></details></div><footer><button class="mux-copy-source" data-action="copy-source" data-event="${escapeHtml(event.id)}">Copy source reference</button><span>${escapeHtml(event.source)}</span><button class="mux-close-paper" data-action="close-forensics">CLOSE FORENSICS ↑</button></footer></div></details></article>`;
     }).join("") || `<p class="mux-empty">No measured request started in this interval.</p>`}</div>
   </section>`;
 }
@@ -1635,6 +1635,10 @@ async function startMonitorPrototype() {
       reasoning: openSheet.querySelector("[data-paper-reasoning]")?.textContent || "",
       status: openSheet.querySelector("[data-paper-status]")?.textContent || "Actual local journal loaded",
     } : null;
+    const boxSnapshot = openPaper && openSheet ? {
+      eventId: openPaper.dataset.eventId,
+      open: Object.fromEntries([...openSheet.querySelectorAll(".mux-paper-box[data-box]")].map((box) => [box.dataset.box, box.open])),
+    } : null;
     const scrollSnapshot = { x: window.scrollX, y: window.scrollY };
     const activeField = root.contains(document.activeElement) && document.activeElement.matches("input, textarea, select") ? document.activeElement : null;
     const focusSnapshot = activeField ? {
@@ -1674,9 +1678,16 @@ async function startMonitorPrototype() {
         if (status) status.textContent = evidenceSnapshot.status;
         if (reasoning && evidenceSnapshot.reasoning) {
           reasoning.textContent = evidenceSnapshot.reasoning;
-          reasoning.closest("section").hidden = false;
+          reasoning.closest("details").hidden = false;
         }
       }
+    }
+    if (boxSnapshot) {
+      const paper = [...root.querySelectorAll(".mux-evidence-paper")].find((candidate) => candidate.dataset.eventId === boxSnapshot.eventId);
+      paper?.querySelectorAll(".mux-paper-box[data-box]").forEach((box) => {
+        const wanted = boxSnapshot.open[box.dataset.box];
+        if (typeof wanted === "boolean" && !box.hidden) box.open = wanted;
+      });
     }
     document.title = customMode ? "My mixed monitor — Saxjax" : `${variant} — ${VARIANTS[variant]} — Saxjax ${labEnabled ? "prototype" : "Monitor"}`;
     bind();
@@ -1788,7 +1799,7 @@ async function startMonitorPrototype() {
         if (output) output.textContent = capture.output || "No locally retained output content.";
         if (reasoning && capture.reasoning) {
           reasoning.textContent = capture.reasoning;
-          reasoning.closest("section").hidden = false;
+          reasoning.closest("details").hidden = false;
         }
         if (status) status.textContent = `Original local journal loaded · ${capture.inputStatus || "captured"}`;
         sheet.dataset.loaded = "true";
@@ -1811,7 +1822,7 @@ async function startMonitorPrototype() {
       if (output) output.textContent = details.dataset.captureRequest ? "Open the paper to load the complete output…" : "The complete output is not retained in this timeline record.";
       if (reasoning) {
         reasoning.textContent = "";
-        reasoning.closest("section").hidden = true;
+        reasoning.closest("details").hidden = true;
       }
       if (status) status.textContent = details.dataset.captureRequest ? "Open FORENSICS to read the original local journal" : "Only the durable timeline excerpt is available";
       sheet.dataset.loaded = "false";

@@ -38,6 +38,7 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     private let widgetSize = NSSize(width: 500, height: 680)
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var monitorSurfaceButton: NSButton!
     private var surfaceButton: NSButton!
     private var widgetButton: NSButton!
     private var widgetMenuItem: NSMenuItem!
@@ -92,6 +93,10 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         let monitorItem = NSMenuItem(title: "Open Default Monitor", action: #selector(openMonitor), keyEquivalent: "m")
         monitorItem.target = self
         viewMenu.addItem(monitorItem)
+        let prototypeMonitorItem = NSMenuItem(title: "Open Selected Prototype Monitor", action: #selector(openSelectedPrototypeMonitor), keyEquivalent: "p")
+        prototypeMonitorItem.keyEquivalentModifierMask = [.command, .option]
+        prototypeMonitorItem.target = self
+        viewMenu.addItem(prototypeMonitorItem)
         let classicItem = NSMenuItem(title: "Open Classic Monitor", action: #selector(openClassicMonitor), keyEquivalent: "m")
         classicItem.keyEquivalentModifierMask = [.command, .shift]
         classicItem.target = self
@@ -141,6 +146,13 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         dragLabel.textColor = NSColor(calibratedRed: 0.51, green: 0.57, blue: 0.53, alpha: 1)
         dragLabel.lineBreakMode = .byTruncatingTail
 
+        monitorSurfaceButton = NSButton(title: "PROTOTYPE", target: self, action: #selector(toggleMonitorSurface))
+        monitorSurfaceButton.bezelStyle = .roundRect
+        monitorSurfaceButton.controlSize = .small
+        monitorSurfaceButton.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold)
+        monitorSurfaceButton.toolTip = "Switch between Classic and selected prototype monitor"
+        monitorSurfaceButton.setAccessibilityLabel("Toggle monitor surface")
+
         surfaceButton = NSButton(title: "LAB", target: self, action: #selector(togglePrototypeSurface))
         surfaceButton.bezelStyle = .roundRect
         surfaceButton.controlSize = .small
@@ -159,7 +171,7 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
             $0.translatesAutoresizingMaskIntoConstraints = false
             rootView.addSubview($0)
         }
-        [dragLabel, surfaceButton, widgetButton].forEach {
+        [dragLabel, monitorSurfaceButton, surfaceButton, widgetButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             dragBar.addSubview($0)
         }
@@ -177,7 +189,12 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
 
             dragLabel.leadingAnchor.constraint(equalTo: dragBar.leadingAnchor, constant: 78),
             dragLabel.centerYAnchor.constraint(equalTo: dragBar.centerYAnchor),
-            dragLabel.trailingAnchor.constraint(lessThanOrEqualTo: surfaceButton.leadingAnchor, constant: -12),
+            dragLabel.trailingAnchor.constraint(lessThanOrEqualTo: monitorSurfaceButton.leadingAnchor, constant: -12),
+
+            monitorSurfaceButton.trailingAnchor.constraint(equalTo: surfaceButton.leadingAnchor, constant: -8),
+            monitorSurfaceButton.centerYAnchor.constraint(equalTo: dragBar.centerYAnchor),
+            monitorSurfaceButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 92),
+            monitorSurfaceButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 26),
 
             surfaceButton.trailingAnchor.constraint(equalTo: widgetButton.leadingAnchor, constant: -8),
             surfaceButton.centerYAnchor.constraint(equalTo: dragBar.centerYAnchor),
@@ -353,6 +370,16 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         loadSurface(monitorURL)
     }
 
+    @objc private func openSelectedPrototypeMonitor() {
+        var components = URLComponents(url: monitorURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "prototype", value: "monitor"),
+            URLQueryItem(name: "view", value: "preferred"),
+            URLQueryItem(name: "surface", value: "default")
+        ]
+        loadSurface(components.url!)
+    }
+
     @objc private func openClassicMonitor() {
         var components = URLComponents(url: monitorURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "surface", value: "classic")]
@@ -373,6 +400,17 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         let isDefaultSurface = components?.queryItems?.contains(where: { $0.name == "surface" && $0.value == "default" }) == true
         let isLab = isPrototype && !isDefaultSurface
         if isLab { openMonitor() } else { openPrototypeLab() }
+    }
+
+    @objc private func toggleMonitorSurface() {
+        let components = webView.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        let isPrototype = components?.queryItems?.contains(where: { $0.name == "prototype" && $0.value == "monitor" }) == true
+        let isDefaultSurface = components?.queryItems?.contains(where: { $0.name == "surface" && $0.value == "default" }) == true
+        if isPrototype && isDefaultSurface {
+            openClassicMonitor()
+        } else {
+            openSelectedPrototypeMonitor()
+        }
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -420,8 +458,13 @@ final class MonitorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         let isPrototype = components?.queryItems?.contains(where: { $0.name == "prototype" && $0.value == "monitor" }) == true
         let isDefaultSurface = components?.queryItems?.contains(where: { $0.name == "surface" && $0.value == "default" }) == true
         let isLab = isPrototype && !isDefaultSurface
+        let isPrototypeMonitor = isPrototype && isDefaultSurface
         surfaceButton.title = isLab ? "MONITOR" : "LAB"
         surfaceButton.toolTip = isLab ? "Open the selected default monitor" : "Open the prototype review lab"
+        monitorSurfaceButton.title = isPrototypeMonitor ? "CLASSIC" : "PROTOTYPE"
+        monitorSurfaceButton.toolTip = isPrototypeMonitor
+            ? "Open Classic monitor"
+            : "Open selected prototype monitor"
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

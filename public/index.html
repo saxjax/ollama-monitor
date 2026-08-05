@@ -16,16 +16,43 @@
         <span class="eyebrow">Local inference observatory</span>
         <h1 id="machine-title">OLLAMA<span>/</span>MONITOR</h1>
       </div>
-      <button class="server-state" id="server-state" type="button" role="switch" data-online="false" aria-label="Ollama power" aria-checked="false" aria-busy="false" title="Start Ollama">
+      <button
+        class="server-state"
+        id="server-state"
+        type="button"
+        role="switch"
+        data-online="false"
+        aria-label="Ollama power"
+        aria-checked="false"
+        aria-busy="false"
+        title="Start Ollama"
+      >
         <span class="power-switch" aria-hidden="true">
           <span class="power-track">
-            <span class="power-knob"><i class="power-mark power-mark-off">0</i><i class="power-mark power-mark-on">1</i></span>
+            <span class="power-knob"
+              ><i class="power-mark power-mark-off">0</i
+              ><i class="power-mark power-mark-on">1</i></span
+            >
           </span>
         </span>
-        <span><b id="server-label">Connecting</b><small id="server-version">OLLAMA · POWER</small></span>
+        <span
+          ><b id="server-label">Connecting</b
+          ><small id="server-version">OLLAMA · POWER</small></span
+        >
       </button>
-      <div class="clock"><strong id="clock">--:--:--</strong><small id="clock-zone">LOCAL TIME</small></div>
-      <button class="help-button" id="help-open" type="button" aria-label="Open setup and help guide" title="Setup and help">?</button>
+      <div class="clock">
+        <strong id="clock">--:--:--</strong
+        ><small id="clock-zone">LOCAL TIME</small>
+      </div>
+      <button
+        class="help-button"
+        id="help-open"
+        type="button"
+        aria-label="Open setup and help guide"
+        title="Setup and help"
+      >
+        ?
+      </button>
     </header>
 
     <main>
@@ -43,33 +70,57 @@
         <article class="readout load-readout">
           <span class="label">Work competing for CPU</span>
           <strong id="load-summary">— / — cores</strong>
-          <p class="helper" id="load-explanation">Average runnable jobs over one minute. Below the core count means there is CPU headroom.</p>
-          <div class="scale"><span id="load-five">5 min: —</span><span id="load-fifteen">15 min: —</span></div>
+          <p class="helper" id="load-explanation">
+            Average runnable jobs over one minute. Below the core count means
+            there is CPU headroom.
+          </p>
+          <div class="scale">
+            <span id="load-five">5 min: —</span
+            ><span id="load-fifteen">15 min: —</span>
+          </div>
         </article>
 
         <article class="readout process-readout">
           <span class="label">Ollama service RAM</span>
           <strong><span id="ollama-rss">—</span> <i>MiB</i></strong>
-          <p class="helper">Memory used by Ollama’s controller. The much larger model allocation is shown separately.</p>
-          <div class="model-meta"><span id="ollama-cpu">— CPU</span><span id="process-count">— processes</span></div>
+          <p class="helper">
+            Memory used by Ollama’s controller. The much larger model allocation
+            is shown separately.
+          </p>
+          <div class="model-meta">
+            <span id="ollama-cpu">— CPU</span
+            ><span id="process-count">— processes</span>
+          </div>
         </article>
       </section>
 
-      <section class="telemetry telemetry-dials" aria-label="Primary system telemetry">
+      <section
+        class="telemetry telemetry-dials"
+        aria-label="Primary system telemetry"
+      >
         <article class="dial" id="cpu-dial" style="--value: 0">
           <div class="dial-face"><b id="cpu-value">—</b><span>CPU</span></div>
           <small>SYSTEM PRESSURE</small>
         </article>
         <article class="dial" id="memory-dial" style="--value: 0">
-          <div class="dial-face"><b id="memory-value">—</b><span>MEM</span></div>
+          <div class="dial-face">
+            <b id="memory-value">—</b><span>MEM</span>
+          </div>
           <small>UNIFIED MEMORY</small>
         </article>
         <article class="dial" id="swap-dial" style="--value: 0">
           <div class="dial-face"><b id="swap-value">—</b><span>SWAP</span></div>
           <small id="swap-detail">USED / TOTAL</small>
         </article>
-        <article class="dial budget-dial" id="budget-dial" style="--value: 0" data-configured="false">
-          <div class="dial-face"><b id="budget-value">—</b><span>BUDGET</span></div>
+        <article
+          class="dial budget-dial"
+          id="budget-dial"
+          style="--value: 0"
+          data-configured="false"
+        >
+          <div class="dial-face">
+            <b id="budget-value">—</b><span>BUDGET</span>
+          </div>
           <small id="budget-detail">COPILOT MONTHLY</small>
         </article>
       </section>
@@ -80,7 +131,9 @@
             <span class="label">Hardware scheduler</span>
             <h2 id="core-title">Core activity</h2>
           </div>
-          <div class="core-summary" id="core-summary">Detecting hardware topology…</div>
+          <div class="core-summary" id="core-summary">
+            Detecting hardware topology…
+          </div>
           <div class="core-legend" aria-label="Core type legend">
             <span><i class="performance"></i> Performance</span>
             <span><i class="efficiency"></i> Efficiency</span>
@@ -92,34 +145,63 @@
       <section class="workbench">
         <div class="stream-panel">
           <div class="section-head">
-            <div><span class="index">01</span><h2>AI communication wire</h2></div>
+            <div>
+              <span class="index">01</span>
+              <h2>AI communication wire</h2>
+            </div>
             <div class="stream-controls">
-              <label class="session-filter">Session
-                <select id="session-filter" aria-label="Filter inference requests by session">
+              <label class="session-filter"
+                >Session
+                <select
+                  id="session-filter"
+                  aria-label="Filter inference requests by session"
+                >
                   <option value="all">All sessions</option>
                 </select>
               </label>
-              <label class="session-filter">Date/time
-                <select id="date-sort" aria-label="Sort inference requests by date and time">
+              <label class="session-filter"
+                >Date/time
+                <select
+                  id="date-sort"
+                  aria-label="Sort inference requests by date and time"
+                >
                   <option value="desc" selected>Newest first</option>
                   <option value="asc">Oldest first</option>
                 </select>
               </label>
-              <label><input id="autofollow" type="checkbox" checked /><span>Follow newest</span></label>
-              <button id="clear-view" type="button" title="Permanently delete all completed request history">Clear view</button>
+              <label
+                ><input id="autofollow" type="checkbox" checked /><span
+                  >Follow newest</span
+                ></label
+              >
+              <button
+                id="clear-view"
+                type="button"
+                title="Permanently delete all completed request history"
+              >
+                Clear view
+              </button>
             </div>
           </div>
           <div class="stream" id="stream" aria-live="polite">
             <div class="empty-state" id="empty-state">
               <div class="radar"><i></i><i></i><i></i></div>
               <strong>Listening for inference traffic</strong>
-              <p>Ollama, GitHub Copilot CLI, VS Code, and VS Code Insiders conversations will appear here with their full local content.</p>
+              <p>
+                Ollama, GitHub Copilot CLI, VS Code, and VS Code Insiders
+                conversations will appear here with their full local content.
+              </p>
             </div>
           </div>
         </div>
 
         <aside class="side-panel">
-          <div class="section-head"><div><span class="index">02</span><h2>Throughput</h2></div></div>
+          <div class="section-head">
+            <div>
+              <span class="index">02</span>
+              <h2>Throughput</h2>
+            </div>
+          </div>
           <div class="counters">
             <div><b id="active-count">0</b><span>ACTIVE</span></div>
             <div><b id="total-count">0</b><span>TOTAL</span></div>
@@ -128,10 +210,18 @@
           <div class="facts">
             <div><span>Disk free</span><b id="disk-free">—</b></div>
             <div><span>Uptime</span><b id="uptime">—</b></div>
-            <div><span>Gateway</span><b id="gateway-address">LOCAL :11435</b></div>
-            <div><span>Ollama</span><b id="upstream-address">LOCAL :11434</b></div>
+            <div>
+              <span>Gateway</span><b id="gateway-address">LOCAL :11435</b>
+            </div>
+            <div>
+              <span>Ollama</span><b id="upstream-address">LOCAL :11434</b>
+            </div>
           </div>
-          <div class="copilot-usage" id="copilot-usage" data-status="unconfigured">
+          <div
+            class="copilot-usage"
+            id="copilot-usage"
+            data-status="unconfigured"
+          >
             <span class="label">GitHub Copilot</span>
             <strong id="copilot-credits">—</strong>
             <small id="copilot-caption">Not configured</small>
@@ -147,33 +237,87 @@
               <span><b id="ollama-input-tokens">—</b> input tokens</span>
               <span><b id="ollama-output-tokens">—</b> output tokens</span>
             </div>
-            <p id="copilot-detail">Run configure-copilot.sh to connect GitHub billing.</p>
+            <p id="copilot-detail">
+              Run configure-copilot.sh to connect GitHub billing.
+            </p>
             <div class="copilot-forecast" id="copilot-forecast" hidden>
-              <strong id="copilot-forecast-title">PAID COPILOT VELOCITY · LOCAL SAMPLE</strong>
+              <strong id="copilot-forecast-title"
+                >PAID COPILOT VELOCITY · LOCAL SAMPLE</strong
+              >
               <div><span>Velocity</span><b id="copilot-velocity">—</b></div>
-              <div><span>Month projection</span><b id="copilot-projection">—</b></div>
+              <div>
+                <span>Month projection</span><b id="copilot-projection">—</b>
+              </div>
               <div><span>Budget runway</span><b id="copilot-runway">—</b></div>
-              <div><span>Parallel capacity</span><b id="copilot-parallel">—</b></div>
-              <small id="copilot-confidence">Based only on locally observed monitored requests.</small>
+              <div>
+                <span>Parallel capacity</span><b id="copilot-parallel">—</b>
+              </div>
+              <small id="copilot-confidence"
+                >Based only on locally observed monitored requests.</small
+              >
             </div>
             <form id="copilot-budget-form" class="copilot-budget-form">
               <label for="copilot-budget-input">Monthly budget (USD)</label>
-              <div><span>$</span><input id="copilot-budget-input" name="monthlyBudgetUsd" type="number" min="0" max="1000000" step="0.01" placeholder="100.00" /><button type="submit">Save</button></div>
-              <small id="copilot-budget-status">Stored only on this Mac. Enter 0 to remove.</small>
+              <div>
+                <span>$</span
+                ><input
+                  id="copilot-budget-input"
+                  name="monthlyBudgetUsd"
+                  type="number"
+                  min="0"
+                  max="1000000"
+                  step="0.01"
+                  placeholder="100.00"
+                /><button type="submit">Save</button>
+              </div>
+              <small id="copilot-budget-status"
+                >Stored only on this Mac. Enter 0 to remove.</small
+              >
             </form>
             <form id="copilot-token-price-form" class="copilot-budget-form">
-              <label for="copilot-token-price-input">Custom Copilot token price (USD / 1M tokens)</label>
-              <div><span>$</span><input id="copilot-token-price-input" name="tokenPriceUsdPerMillion" type="number" min="0" max="1000000" step="0.000001" placeholder="Use model rates" /><button type="submit">Save</button></div>
-              <small id="copilot-token-price-status">Overrides pricing for local paid-Copilot velocity estimates only. Enter 0 to use model rates.</small>
+              <label for="copilot-token-price-input"
+                >Custom Copilot token price (USD / 1M tokens)</label
+              >
+              <div>
+                <span>$</span
+                ><input
+                  id="copilot-token-price-input"
+                  name="tokenPriceUsdPerMillion"
+                  type="number"
+                  min="0"
+                  max="1000000"
+                  step="0.000001"
+                  placeholder="Use model rates"
+                /><button type="submit">Save</button>
+              </div>
+              <small id="copilot-token-price-status"
+                >Overrides pricing for local paid-Copilot velocity estimates
+                only. Enter 0 to use model rates.</small
+              >
             </form>
             <div class="copilot-actions" id="copilot-actions">
-              <a id="copilot-token-status" href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noreferrer">Review token status</a>
-              <a id="copilot-token-create" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create replacement</a>
+              <a
+                id="copilot-token-status"
+                href="https://github.com/settings/personal-access-tokens"
+                target="_blank"
+                rel="noreferrer"
+                >Review token status</a
+              >
+              <a
+                id="copilot-token-create"
+                href="https://github.com/settings/personal-access-tokens/new"
+                target="_blank"
+                rel="noreferrer"
+                >Create replacement</a
+              >
             </div>
           </div>
           <div class="privacy-note">
             <span>Capture policy</span>
-            <p>Full Ollama and Copilot content is copied into private local monitor files until you choose <strong>Clear view</strong>.</p>
+            <p>
+              Full Ollama and Copilot content is copied into private local
+              monitor files until you choose <strong>Clear view</strong>.
+            </p>
           </div>
         </aside>
       </section>
@@ -182,7 +326,12 @@
     <template id="request-template">
       <article class="exchange">
         <header class="exchange-head">
-          <button class="exchange-toggle" type="button" aria-expanded="true" title="Collapse request">
+          <button
+            class="exchange-toggle"
+            type="button"
+            aria-expanded="true"
+            title="Collapse request"
+          >
             <span class="exchange-meta">
               <span class="status-mark"></span>
               <span class="session-badge"></span>
@@ -197,13 +346,40 @@
               <span class="context-title">SESSION CONTEXT</span>
               <span class="context-track"><i></i></span>
               <b class="context-label">Calculating…</b>
-              <small>Input tokens carried into this request versus the model’s available context.</small>
+              <small
+                >Input tokens carried into this request versus the model’s
+                available context.</small
+              >
             </span>
           </button>
         </header>
-        <div class="message prompt"><button class="open-content" data-kind="in" type="button" title="Open the complete incoming context; preview is limited to 10 lines">IN</button><pre></pre></div>
-        <details class="thinking"><summary>Model reasoning</summary><pre></pre></details>
-        <div class="message response"><button class="open-content" data-kind="out" type="button" title="Open the complete model response; preview is limited to 10 lines">OUT</button><pre></pre><i class="cursor"></i></div>
+        <div class="message prompt">
+          <button
+            class="open-content"
+            data-kind="in"
+            type="button"
+            title="Open the complete incoming context; preview is limited to 10 lines"
+          >
+            IN
+          </button>
+          <pre></pre>
+        </div>
+        <details class="thinking">
+          <summary>Model reasoning</summary>
+          <pre></pre>
+        </details>
+        <div class="message response">
+          <button
+            class="open-content"
+            data-kind="out"
+            type="button"
+            title="Open the complete model response; preview is limited to 10 lines"
+          >
+            OUT
+          </button>
+          <pre></pre>
+          <i class="cursor"></i>
+        </div>
       </article>
     </template>
 
@@ -214,53 +390,261 @@
             <span>SETUP / ACCESS / LINKS</span>
             <h2 id="help-title">Monitor help</h2>
           </div>
-          <button id="help-close" type="button" aria-label="Close help">CLOSE <b>×</b></button>
+          <button id="help-close" type="button" aria-label="Close help">
+            CLOSE <b>×</b>
+          </button>
         </header>
         <div class="help-body">
-          <p class="help-intro">Saxjax Monitor stays local. Use this guide to connect the clients you want to observe; nothing below changes your Copilot or Ollama account.</p>
+          <p class="help-intro">
+            Saxjax Monitor stays local. Use this guide to connect the clients
+            you want to observe; nothing below changes your Copilot or Ollama
+            account.
+          </p>
           <details open>
             <summary>01 · Ollama gateway</summary>
-            <p>Keep Ollama on its normal port and point the client you want to observe at the monitored gateway:</p>
-            <div class="help-code"><code>OLLAMA_HOST=http://127.0.0.1:11435 your-client-command</code><button class="copy-help" type="button" data-copy="OLLAMA_HOST=http://127.0.0.1:11435 your-client-command">COPY</button></div>
-            <div class="help-links"><a href="http://127.0.0.1:11435/monitor/" target="_blank" rel="noreferrer">Open dashboard</a><a href="http://127.0.0.1:11435" target="_blank" rel="noreferrer">Gateway URL</a><a href="https://ollama.com/download" target="_blank" rel="noreferrer">Install Ollama</a></div>
+            <p>
+              Keep Ollama on its normal port and point the client you want to
+              observe at the monitored gateway:
+            </p>
+            <div class="help-code">
+              <code>OLLAMA_HOST=http://127.0.0.1:11435 your-client-command</code
+              ><button
+                class="copy-help"
+                type="button"
+                data-copy="OLLAMA_HOST=http://127.0.0.1:11435 your-client-command"
+              >
+                COPY
+              </button>
+            </div>
+            <div class="help-links">
+              <a
+                href="http://127.0.0.1:11435/monitor/"
+                target="_blank"
+                rel="noreferrer"
+                >Open dashboard</a
+              ><a href="http://127.0.0.1:11435" target="_blank" rel="noreferrer"
+                >Gateway URL</a
+              ><a
+                href="https://ollama.com/download"
+                target="_blank"
+                rel="noreferrer"
+                >Install Ollama</a
+              >
+            </div>
           </details>
           <details>
             <summary>02 · GitHub Copilot billing</summary>
-            <p>For paid credits, configure either your organization seat or personal account. The token is stored in macOS Keychain; only non-secret identity settings are stored locally.</p>
-            <div class="help-code"><code>./configure-copilot.sh organization YOUR_ORG YOUR_GITHUB_USERNAME</code><button class="copy-help" type="button" data-copy="./configure-copilot.sh organization YOUR_ORG YOUR_GITHUB_USERNAME">COPY</button></div>
-            <div class="help-code"><code>./configure-copilot.sh user YOUR_GITHUB_USERNAME</code><button class="copy-help" type="button" data-copy="./configure-copilot.sh user YOUR_GITHUB_USERNAME">COPY</button></div>
-            <p class="help-note">Required token access: organization <strong>Administration: read</strong>; personal account <strong>Plan: read</strong>. GitHub billing remains authoritative when available.</p>
-            <div class="help-links"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create fine-grained token</a><a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noreferrer">Review tokens</a><a href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises" target="_blank" rel="noreferrer">Copilot billing docs</a></div>
+            <p>
+              For paid credits, configure either your organization seat or
+              personal account. The token is stored in macOS Keychain; only
+              non-secret identity settings are stored locally.
+            </p>
+            <div class="help-code">
+              <code
+                >./configure-copilot.sh organization YOUR_ORG
+                YOUR_GITHUB_USERNAME</code
+              ><button
+                class="copy-help"
+                type="button"
+                data-copy="./configure-copilot.sh organization YOUR_ORG YOUR_GITHUB_USERNAME"
+              >
+                COPY
+              </button>
+            </div>
+            <div class="help-code">
+              <code>./configure-copilot.sh user YOUR_GITHUB_USERNAME</code
+              ><button
+                class="copy-help"
+                type="button"
+                data-copy="./configure-copilot.sh user YOUR_GITHUB_USERNAME"
+              >
+                COPY
+              </button>
+            </div>
+            <p class="help-note">
+              Required token access: organization
+              <strong>Administration: read</strong>; personal account
+              <strong>Plan: read</strong>. GitHub billing remains authoritative
+              when available.
+            </p>
+            <div class="help-links">
+              <a
+                href="https://github.com/settings/personal-access-tokens/new"
+                target="_blank"
+                rel="noreferrer"
+                >Create fine-grained token</a
+              ><a
+                href="https://github.com/settings/personal-access-tokens"
+                target="_blank"
+                rel="noreferrer"
+                >Review tokens</a
+              ><a
+                href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises"
+                target="_blank"
+                rel="noreferrer"
+                >Copilot billing docs</a
+              >
+            </div>
           </details>
           <details>
             <summary>03 · Copilot capture sources</summary>
-            <p>Leave Saxjax Monitor running while using the clients. It watches new local structured sessions—no proxy or editor extension is required.</p>
-            <ul class="help-list"><li><strong>Copilot CLI:</strong> <code>~/.copilot/session-state/</code></li><li><strong>VS Code:</strong> <code>~/Library/Application Support/Code/User/workspaceStorage/</code></li><li><strong>VS Code Insiders:</strong> <code>~/Library/Application Support/Code - Insiders/User/workspaceStorage/</code></li></ul>
-            <p class="help-note">VS Code values are exact when the journal provides token metadata. CLI input is labelled reconstructed when the final server payload is not locally available. Missing token counts are shown as estimates.</p>
-            <div class="help-links"><a href="https://github.com/features/copilot" target="_blank" rel="noreferrer">Copilot overview</a><a href="https://code.visualstudio.com/docs/copilot/overview" target="_blank" rel="noreferrer">VS Code Copilot docs</a><a href="https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference" target="_blank" rel="noreferrer">Copilot CLI docs</a></div>
+            <p>
+              Leave Saxjax Monitor running while using the clients. It watches
+              new local structured sessions—no proxy or editor extension is
+              required.
+            </p>
+            <ul class="help-list">
+              <li>
+                <strong>Copilot CLI:</strong>
+                <code>~/.copilot/session-state/</code>
+              </li>
+              <li>
+                <strong>VS Code:</strong>
+                <code
+                  >~/Library/Application
+                  Support/Code/User/workspaceStorage/</code
+                >
+              </li>
+              <li>
+                <strong>VS Code Insiders:</strong>
+                <code
+                  >~/Library/Application Support/Code -
+                  Insiders/User/workspaceStorage/</code
+                >
+              </li>
+            </ul>
+            <p class="help-note">
+              VS Code values are exact when the journal provides token metadata.
+              CLI input is labelled reconstructed when the final server payload
+              is not locally available. Missing token counts are shown as
+              estimates.
+            </p>
+            <div class="help-links">
+              <a
+                href="https://github.com/features/copilot"
+                target="_blank"
+                rel="noreferrer"
+                >Copilot overview</a
+              ><a
+                href="https://code.visualstudio.com/docs/copilot/overview"
+                target="_blank"
+                rel="noreferrer"
+                >VS Code Copilot docs</a
+              ><a
+                href="https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference"
+                target="_blank"
+                rel="noreferrer"
+                >Copilot CLI docs</a
+              >
+            </div>
           </details>
           <details>
             <summary>04 · Local estimates and controls</summary>
-            <p>Set your monthly Copilot budget and optional custom USD/1M token price in the Copilot panel. Ollama tokens are shown separately as local/free and never enter paid Copilot calculations.</p>
-            <p>When GitHub billing is unavailable, paid values are marked <strong>≈ LOCAL ESTIMATE</strong> and use only Copilot traffic observed on this Mac. Clear view deletes the monitor’s local copies, not the source client histories.</p>
-            <div class="help-links"><a href="https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing" target="_blank" rel="noreferrer">Model pricing</a><a href="https://docs.github.com/en/copilot/tutorials/optimize-ai-usage" target="_blank" rel="noreferrer">Optimize usage</a></div>
+            <p>
+              Set your monthly Copilot budget and optional custom USD/1M token
+              price in the Copilot panel. Ollama tokens are shown separately as
+              local/free and never enter paid Copilot calculations.
+            </p>
+            <p>
+              When GitHub billing is unavailable, paid values are marked
+              <strong>≈ LOCAL ESTIMATE</strong> and use only Copilot traffic
+              observed on this Mac. Clear view deletes the monitor’s local
+              copies, not the source client histories.
+            </p>
+            <div class="help-links">
+              <a
+                href="https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing"
+                target="_blank"
+                rel="noreferrer"
+                >Model pricing</a
+              ><a
+                href="https://docs.github.com/en/copilot/tutorials/optimize-ai-usage"
+                target="_blank"
+                rel="noreferrer"
+                >Optimize usage</a
+              >
+            </div>
           </details>
           <details>
             <summary>05 · How to read the monitor</summary>
-            <p><strong>PAID · GITHUB COPILOT</strong> contains Copilot credits, billed dollars, and Copilot-only input/output tokens. <strong>LOCAL / FREE · OLLAMA</strong> contains Ollama tokens and is never included in Copilot billing.</p>
-            <p>Exact values come from the client or GitHub. Values prefixed with <strong>≈</strong> are estimates. VS Code can provide client-rendered context; Copilot CLI context may be reconstructed from its transcript. Server-only additions and cache accounting may not be visible locally.</p>
-            <p>The velocity panel uses recent Copilot traffic. GitHub billing is the budget baseline when available; otherwise the entire paid estimate is local. Runway and parallel capacity describe a budget burn-rate scenario, not a technical concurrency limit.</p>
+            <p>
+              <strong>PAID · GITHUB COPILOT</strong> contains Copilot credits,
+              billed dollars, and Copilot-only input/output tokens.
+              <strong>LOCAL / FREE · OLLAMA</strong> contains Ollama tokens and
+              is never included in Copilot billing.
+            </p>
+            <p>
+              Exact values come from the client or GitHub. Values prefixed with
+              <strong>≈</strong> are estimates. VS Code can provide
+              client-rendered context; Copilot CLI context may be reconstructed
+              from its transcript. Server-only additions and cache accounting
+              may not be visible locally.
+            </p>
+            <p>
+              The velocity panel uses recent Copilot traffic. GitHub billing is
+              the budget baseline when available; otherwise the entire paid
+              estimate is local. Runway and parallel capacity describe a budget
+              burn-rate scenario, not a technical concurrency limit.
+            </p>
           </details>
           <details>
             <summary>06 · Install, update, and troubleshoot</summary>
-            <div class="help-code"><code>./install.sh</code><button class="copy-help" type="button" data-copy="./install.sh">COPY</button></div>
-            <p>Installation builds the self-contained app in <code>~/Applications/Saxjax Monitor.app</code> and registers a LaunchAgent. After updating the checkout, run the installer again, then quit and reopen the app from Applications or Spotlight.</p>
-            <ul class="help-list"><li><strong>No Spotlight app:</strong> rerun <code>./install.sh</code>, then reopen Spotlight and search “Saxjax Monitor”.</li><li><strong>No Ollama traffic:</strong> confirm the client uses port <code>11435</code> and Ollama itself remains available on <code>11434</code>.</li><li><strong>No Copilot traffic:</strong> keep the monitor running and start a new CLI/editor request; existing sessions are not imported at startup.</li><li><strong>No billing:</strong> review the token link in the Copilot panel and verify the required read-only permission.</li></ul>
-            <p class="help-note">Use <strong>Clear view</strong> to delete monitor-owned history. It does not erase the original Copilot CLI, VS Code, VS Code Insiders, or Ollama source history.</p>
-            <div class="help-links"><a href="http://127.0.0.1:11435/monitor/" target="_blank" rel="noreferrer">Reload dashboard</a><a href="https://github.com/saxjax/ollama-monitor" target="_blank" rel="noreferrer">Project repository</a></div>
+            <div class="help-code">
+              <code>./install.sh</code
+              ><button class="copy-help" type="button" data-copy="./install.sh">
+                COPY
+              </button>
+            </div>
+            <p>
+              Installation builds the self-contained app in
+              <code>~/Applications/Saxjax Monitor.app</code> and registers a
+              LaunchAgent. After updating the checkout, run the installer again,
+              then quit and reopen the app from Applications or Spotlight.
+            </p>
+            <ul class="help-list">
+              <li>
+                <strong>No Spotlight app:</strong> rerun
+                <code>./install.sh</code>, then reopen Spotlight and search
+                “Saxjax Monitor”.
+              </li>
+              <li>
+                <strong>No Ollama traffic:</strong> confirm the client uses port
+                <code>11435</code> and Ollama itself remains available on
+                <code>11434</code>.
+              </li>
+              <li>
+                <strong>No Copilot traffic:</strong> keep the monitor running
+                and start a new CLI/editor request; existing sessions are not
+                imported at startup.
+              </li>
+              <li>
+                <strong>No billing:</strong> review the token link in the
+                Copilot panel and verify the required read-only permission.
+              </li>
+            </ul>
+            <p class="help-note">
+              Use <strong>Clear view</strong> to delete monitor-owned history.
+              It does not erase the original Copilot CLI, VS Code, VS Code
+              Insiders, or Ollama source history.
+            </p>
+            <div class="help-links">
+              <a
+                href="http://127.0.0.1:11435/monitor/"
+                target="_blank"
+                rel="noreferrer"
+                >Reload dashboard</a
+              ><a
+                href="https://github.com/saxjax/ollama-monitor"
+                target="_blank"
+                rel="noreferrer"
+                >Project repository</a
+              >
+            </div>
           </details>
         </div>
-        <footer class="help-footer"><span>ESC TO CLOSE</span><span>ALL PROMPT DATA STAYS LOCAL</span></footer>
+        <footer class="help-footer">
+          <span>ESC TO CLOSE</span><span>ALL PROMPT DATA STAYS LOCAL</span>
+        </footer>
       </div>
     </dialog>
 
@@ -271,7 +655,13 @@
             <span id="reader-direction">INCOMING CONTEXT</span>
             <h2 id="reader-title">Full transmission</h2>
           </div>
-          <button id="reader-close" type="button" aria-label="Close full content reader">CLOSE <b>×</b></button>
+          <button
+            id="reader-close"
+            type="button"
+            aria-label="Close full content reader"
+          >
+            CLOSE <b>×</b>
+          </button>
         </header>
         <div class="reader-meta">
           <span id="reader-model">—</span>

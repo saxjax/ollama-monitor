@@ -8,7 +8,9 @@
 (() => {
   const SURFACE_KEY = "saxjax.surface.v1";
   const params = new URLSearchParams(location.search);
-  const labRoute = params.get("prototype") === "monitor" && params.get("surface") !== "default";
+  const labRoute =
+    params.get("prototype") === "monitor" &&
+    params.get("surface") !== "default";
   // The prototype identity for this page load. A page reload is only needed to
   // move between "month" and "lab", not for the primary Classic toggle.
   const prototypeSurface = labRoute ? "lab" : "month";
@@ -52,7 +54,9 @@
         loadedBundles.add(src);
         resolve();
       });
-      element.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)));
+      element.addEventListener("error", () =>
+        reject(new Error(`Failed to load ${src}`)),
+      );
       document.body.append(element);
     });
   }
@@ -80,13 +84,17 @@
     } else if (name === "month") {
       url.searchParams.set("prototype", "monitor");
       url.searchParams.set("surface", "default");
-      if (!url.searchParams.get("variant")) url.searchParams.set("variant", "I");
+      if (!url.searchParams.get("variant"))
+        url.searchParams.set("variant", "I");
     }
     history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
 
   function reflectVisibility(name) {
-    document.documentElement.classList.toggle("monitor-ux-prototype-active", name !== "classic");
+    document.documentElement.classList.toggle(
+      "monitor-ux-prototype-active",
+      name !== "classic",
+    );
     document.body.dataset.surface = name;
   }
 
@@ -100,7 +108,9 @@
       reflectUrl(name);
     }
     updateSwitcher();
-    window.dispatchEvent(new CustomEvent("saxjax-surface-change", { detail: { surface: name } }));
+    window.dispatchEvent(
+      new CustomEvent("saxjax-surface-change", { detail: { surface: name } }),
+    );
   }
 
   let switcher;
@@ -119,13 +129,16 @@
     switcher.className = "surface-switch shell-switch";
     switcher.setAttribute("aria-label", "Monitor surface switch");
 
-    const prototypeLabel = prototypeSurface === "lab" ? "Prototype lab" : "Run the month";
+    const prototypeLabel =
+      prototypeSurface === "lab" ? "Prototype lab" : "Run the month";
     switcher.innerHTML = `
       <button type="button" class="surface-link" data-shell-surface="classic" aria-pressed="false" title="Classic monitor">Classic</button>
       <button type="button" class="surface-link" data-shell-surface="${prototypeSurface}" aria-pressed="false" title="${prototypeLabel}">${prototypeLabel}</button>
-      ${prototypeSurface === "month"
-        ? `<a class="surface-link surface-link-secondary" href="/monitor/?prototype=monitor&surface=lab" title="Open the full prototype lab">Lab</a>`
-        : `<a class="surface-link surface-link-secondary" href="/monitor/?prototype=monitor&surface=default&variant=I" title="Open the Run the month monitor">Run the month</a>`}
+      ${
+        prototypeSurface === "month"
+          ? `<a class="surface-link surface-link-secondary" href="/monitor/?prototype=monitor&surface=lab" title="Open the full prototype lab">Lab</a>`
+          : `<a class="surface-link surface-link-secondary" href="/monitor/?prototype=monitor&surface=default&variant=I" title="Open the Run the month monitor">Run the month</a>`
+      }
     `;
 
     switcher.addEventListener("click", (event) => {
@@ -149,15 +162,23 @@
     buildSwitcher();
     updateSwitcher();
     void ensureBundle(currentSurface).then(() => {
-      window.dispatchEvent(new CustomEvent("saxjax-surface-change", { detail: { surface: currentSurface } }));
+      window.dispatchEvent(
+        new CustomEvent("saxjax-surface-change", {
+          detail: { surface: currentSurface },
+        }),
+      );
     });
     // Warm the other primary surface once idle so the first toggle is instant.
     const other = currentSurface === "classic" ? prototypeSurface : "classic";
-    const warm = () => { void ensureBundle(other).catch(() => {}); };
-    if ("requestIdleCallback" in window) requestIdleCallback(warm, { timeout: 4000 });
+    const warm = () => {
+      void ensureBundle(other).catch(() => {});
+    };
+    if ("requestIdleCallback" in window)
+      requestIdleCallback(warm, { timeout: 4000 });
     else setTimeout(warm, 2000);
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", start);
   else start();
 })();

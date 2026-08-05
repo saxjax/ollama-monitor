@@ -25,7 +25,9 @@ function readViewState() {
 
 const savedViewState = readViewState();
 const requestedDateSort = new URLSearchParams(location.search).get("sort");
-let dateSortDirection = globalThis.SaxjaxDateTimeSort.normalize(requestedDateSort || savedViewState?.sortDirection);
+let dateSortDirection = globalThis.SaxjaxDateTimeSort.normalize(
+  requestedDateSort || savedViewState?.sortDirection,
+);
 dateSort.value = dateSortDirection;
 
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
@@ -39,14 +41,17 @@ if (savedViewState) {
 function persistViewState() {
   const openExchange = stream.querySelector(".exchange:not(.collapsed)");
   try {
-    sessionStorage.setItem(viewStateKey, JSON.stringify({
-      windowY: window.scrollY,
-      streamTop: stream.scrollTop,
-      session: sessionFilter.value,
-      sortDirection: dateSortDirection,
-      openExchangeId: openExchange?.dataset.id || null,
-      autofollow: autofollow.checked,
-    }));
+    sessionStorage.setItem(
+      viewStateKey,
+      JSON.stringify({
+        windowY: window.scrollY,
+        streamTop: stream.scrollTop,
+        session: sessionFilter.value,
+        sortDirection: dateSortDirection,
+        openExchangeId: openExchange?.dataset.id || null,
+        autofollow: autofollow.checked,
+      }),
+    );
   } catch {
     // The monitor remains usable if storage is unavailable.
   }
@@ -66,7 +71,11 @@ function restoreViewState() {
     return;
   }
 
-  if ([...sessionFilter.options].some((option) => option.value === savedViewState.session)) {
+  if (
+    [...sessionFilter.options].some(
+      (option) => option.value === savedViewState.session,
+    )
+  ) {
     sessionFilter.value = savedViewState.session;
   }
   dateSort.value = dateSortDirection;
@@ -77,7 +86,9 @@ function restoreViewState() {
   const openExchange = savedViewState.openExchangeId
     ? exchanges.get(savedViewState.openExchangeId)
     : null;
-  exchanges.forEach((element) => setCollapsed(element, element !== openExchange));
+  exchanges.forEach((element) =>
+    setCollapsed(element, element !== openExchange),
+  );
 
   const restorePosition = () => {
     stream.scrollTop = savedViewState.streamTop || 0;
@@ -115,8 +126,9 @@ function renderMachineTitle(machineName) {
   if (heading.dataset.machineName === normalized) return;
 
   const parts = normalized.split(/[\s_-]+/).filter(Boolean);
-  const displayParts = (parts.length ? parts : ["OLLAMA", "MONITOR"])
-    .map((part) => part.toLocaleUpperCase());
+  const displayParts = (parts.length ? parts : ["OLLAMA", "MONITOR"]).map(
+    (part) => part.toLocaleUpperCase(),
+  );
   heading.replaceChildren();
   displayParts.forEach((part, index) => {
     if (index) {
@@ -135,42 +147,52 @@ function renderMachineTitle(machineName) {
 function setDial(id, value, suffix = "%") {
   const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
   $(`#${id}-dial`).style.setProperty("--value", safe);
-  $(`#${id}-value`).textContent = Number.isFinite(value) ? `${Math.round(value)}${suffix}` : "—";
+  $(`#${id}-value`).textContent = Number.isFinite(value)
+    ? `${Math.round(value)}${suffix}`
+    : "—";
 }
 
 function renderCores(system) {
   const cores = system.cores || [];
   const hardware = system.hardware || {};
   const coreGrid = $("#core-grid");
-  const topology = hardware.performanceCores || hardware.efficiencyCores
-    ? `${hardware.performanceCores || 0}P + ${hardware.efficiencyCores || 0}E`
-    : `${hardware.physicalCores || cores.length} physical · ${hardware.logicalCores || cores.length} logical`;
-  $("#core-summary").textContent = `${hardware.brand || "CPU"} · ${topology} · system-wide live 2s delta`;
+  const topology =
+    hardware.performanceCores || hardware.efficiencyCores
+      ? `${hardware.performanceCores || 0}P + ${hardware.efficiencyCores || 0}E`
+      : `${hardware.physicalCores || cores.length} physical · ${hardware.logicalCores || cores.length} logical`;
+  $("#core-summary").textContent =
+    `${hardware.brand || "CPU"} · ${topology} · system-wide live 2s delta`;
 
   if (coreGrid.children.length !== cores.length) {
-    coreGrid.replaceChildren(...cores.map((core) => {
-      const cell = document.createElement("article");
-      cell.className = `core-cell ${core.type}`;
-      cell.dataset.index = core.index;
-      cell.innerHTML = `<header><strong></strong><output></output></header><div class="core-meter"><i></i></div><footer><span></span><span></span></footer>`;
-      return cell;
-    }));
+    coreGrid.replaceChildren(
+      ...cores.map((core) => {
+        const cell = document.createElement("article");
+        cell.className = `core-cell ${core.type}`;
+        cell.dataset.index = core.index;
+        cell.innerHTML = `<header><strong></strong><output></output></header><div class="core-meter"><i></i></div><footer><span></span><span></span></footer>`;
+        return cell;
+      }),
+    );
   }
 
   cores.forEach((core) => {
     const cell = coreGrid.querySelector(`[data-index="${core.index}"]`);
     if (!cell) return;
-    const utilization = Number.isFinite(core.utilization) ? core.utilization : null;
+    const utilization = Number.isFinite(core.utilization)
+      ? core.utilization
+      : null;
     cell.className = `core-cell ${core.type}`;
     cell.classList.toggle("working", utilization != null && utilization >= 5);
     cell.style.setProperty("--core-load", `${Math.max(0, utilization || 0)}%`);
     cell.querySelector("strong").textContent = core.label;
-    cell.querySelector("output").textContent = utilization == null ? "…" : `${Math.round(utilization)}%`;
+    cell.querySelector("output").textContent =
+      utilization == null ? "…" : `${Math.round(utilization)}%`;
     cell.querySelector("footer span:first-child").textContent = "HARDWARE";
     cell.querySelector("footer span:last-child").textContent = `#${core.index}`;
-    cell.title = utilization == null
-      ? `${core.label}, hardware core ${core.index}: sampling`
-      : `${core.label}, hardware core ${core.index}: ${number(utilization, 1)}% system activity over the last sample`;
+    cell.title =
+      utilization == null
+        ? `${core.label}, hardware core ${core.index}: sampling`
+        : `${core.label}, hardware core ${core.index}: ${number(utilization, 1)}% system activity over the last sample`;
   });
 }
 
@@ -181,26 +203,47 @@ function renderMetrics(metrics) {
   if (!ollamaControlPending) {
     serverState.dataset.online = String(server.online);
     serverState.setAttribute("aria-checked", String(server.online));
-    serverState.title = server.online ? "Stop and disable Ollama" : "Enable and start Ollama";
+    serverState.title = server.online
+      ? "Stop and disable Ollama"
+      : "Enable and start Ollama";
     $("#server-label").textContent = server.online ? "ONLINE" : "OFFLINE";
     $("#server-version").textContent = server.online
       ? `OLLAMA ${server.version || ""} · STOP`.replace("  ", " ")
       : "OLLAMA · START";
     if (serverState.dataset.ready !== "true") {
-      requestAnimationFrame(() => { serverState.dataset.ready = "true"; });
+      requestAnimationFrame(() => {
+        serverState.dataset.ready = "true";
+      });
     }
   }
   setDial("cpu", system.cpuUsed);
   setDial("memory", system.memoryFree == null ? null : 100 - system.memoryFree);
-  const swapPercent = system.swapTotalMB ? (system.swapUsedMB / system.swapTotalMB) * 100 : 0;
+  const swapPercent = system.swapTotalMB
+    ? (system.swapUsedMB / system.swapTotalMB) * 100
+    : 0;
   setDial("swap", swapPercent);
-  $("#swap-detail").textContent = system.swapTotalMB == null ? "USED / TOTAL" : `${number(system.swapUsedMB / 1024, 1)} / ${number(system.swapTotalMB / 1024, 1)} GIB`;
+  $("#swap-detail").textContent =
+    system.swapTotalMB == null
+      ? "USED / TOTAL"
+      : `${number(system.swapUsedMB / 1024, 1)} / ${number(system.swapTotalMB / 1024, 1)} GIB`;
   const oneMinuteLoad = system.load[0];
   const coreCount = system.logicalCores;
-  const loadRatio = oneMinuteLoad != null && coreCount ? oneMinuteLoad / coreCount : null;
-  const loadState = loadRatio == null ? "Waiting for data" : loadRatio < .5 ? "Comfortable" : loadRatio < .8 ? "Moderate" : loadRatio < 1 ? "Busy" : "Overloaded";
-  $("#load-summary").textContent = `${number(oneMinuteLoad, 1)} / ${coreCount ?? "—"} cores`;
-  $("#load-explanation").textContent = `${loadState}: ${number(loadRatio == null ? null : loadRatio * 100)}% scheduler demand over 1 minute. Below ${coreCount ?? "the"} cores means there is headroom.`;
+  const loadRatio =
+    oneMinuteLoad != null && coreCount ? oneMinuteLoad / coreCount : null;
+  const loadState =
+    loadRatio == null
+      ? "Waiting for data"
+      : loadRatio < 0.5
+        ? "Comfortable"
+        : loadRatio < 0.8
+          ? "Moderate"
+          : loadRatio < 1
+            ? "Busy"
+            : "Overloaded";
+  $("#load-summary").textContent =
+    `${number(oneMinuteLoad, 1)} / ${coreCount ?? "—"} cores`;
+  $("#load-explanation").textContent =
+    `${loadState}: ${number(loadRatio == null ? null : loadRatio * 100)}% scheduler demand over 1 minute. Below ${coreCount ?? "the"} cores means there is headroom.`;
   $("#load-five").textContent = `5 min: ${number(system.load[1], 1)}`;
   $("#load-fifteen").textContent = `15 min: ${number(system.load[2], 1)}`;
   $("#ollama-rss").textContent = number(ollama.rssGB * 1024, 0);
@@ -218,11 +261,17 @@ function renderMetrics(metrics) {
   renderCores(system);
 
   const model = ollama.models[0];
-  ollama.models.forEach((entry) => modelContexts.set(entry.name, entry.context));
+  ollama.models.forEach((entry) =>
+    modelContexts.set(entry.name, entry.context),
+  );
   $("#model-name").textContent = model?.name || "No model loaded";
-  $("#model-size").textContent = model ? `${model.size} allocation` : "— allocation";
+  $("#model-size").textContent = model
+    ? `${model.size} allocation`
+    : "— allocation";
   $("#model-processor").textContent = model?.processor || "— processor";
-  $("#model-context").textContent = model?.context ? `${model.context.toLocaleString()} context` : "— context";
+  $("#model-context").textContent = model?.context
+    ? `${model.context.toLocaleString()} context`
+    : "— context";
 }
 
 function renderCopilotUsage(usage) {
@@ -232,78 +281,119 @@ function renderCopilotUsage(usage) {
   $("#copilot-credits").textContent = Number.isFinite(usage.usedCredits)
     ? `${usage.usageEstimate ? "≈" : ""}${usage.usedCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })}`
     : "—";
-  $("#copilot-caption").textContent = usage.status === "ready"
-    ? `AI CREDITS · ${usage.period || "CURRENT PERIOD"}`
-    : usage.status === "estimated" ? "AI CREDITS · LOCAL ESTIMATE"
-    : usage.status.toUpperCase();
+  $("#copilot-caption").textContent =
+    usage.status === "ready"
+      ? `AI CREDITS · ${usage.period || "CURRENT PERIOD"}`
+      : usage.status === "estimated"
+        ? "AI CREDITS · LOCAL ESTIMATE"
+        : usage.status.toUpperCase();
   $("#copilot-cost").textContent = Number.isFinite(usage.estimatedCost)
     ? `${usage.usageEstimate ? "≈" : ""}$${usage.estimatedCost.toFixed(2)} ${usage.usageEstimate ? "estimated" : "billed"}`
     : "— cost";
   $("#copilot-updated").textContent = usage.updatedAt
     ? `${new Date(usage.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} updated`
     : "— updated";
-  $("#copilot-input-tokens").textContent = Number.isFinite(usage.observedInputTokens)
+  $("#copilot-input-tokens").textContent = Number.isFinite(
+    usage.observedInputTokens,
+  )
     ? `${usage.observedInputTokensEstimated ? "≈" : ""}${usage.observedInputTokens.toLocaleString()}`
     : "—";
-  $("#copilot-output-tokens").textContent = Number.isFinite(usage.observedOutputTokens)
+  $("#copilot-output-tokens").textContent = Number.isFinite(
+    usage.observedOutputTokens,
+  )
     ? `${usage.observedOutputTokensEstimated ? "≈" : ""}${usage.observedOutputTokens.toLocaleString()}`
     : "—";
-  $("#ollama-input-tokens").textContent = Number.isFinite(usage.ollamaInputTokens)
+  $("#ollama-input-tokens").textContent = Number.isFinite(
+    usage.ollamaInputTokens,
+  )
     ? usage.ollamaInputTokens.toLocaleString()
     : "—";
-  $("#ollama-output-tokens").textContent = Number.isFinite(usage.ollamaOutputTokens)
+  $("#ollama-output-tokens").textContent = Number.isFinite(
+    usage.ollamaOutputTokens,
+  )
     ? usage.ollamaOutputTokens.toLocaleString()
     : "—";
-  const budgetPercent = Number.isFinite(usage.budgetUsedPercent) ? usage.budgetUsedPercent : null;
+  const budgetPercent = Number.isFinite(usage.budgetUsedPercent)
+    ? usage.budgetUsedPercent
+    : null;
   setDial("budget", budgetPercent);
   const budgetDial = $("#budget-dial");
-  budgetDial.dataset.configured = String(Number.isFinite(usage.monthlyBudgetUsd));
-  budgetDial.classList.toggle("warning", budgetPercent != null && budgetPercent >= 75 && budgetPercent < 100);
-  budgetDial.classList.toggle("danger", budgetPercent != null && budgetPercent >= 100);
+  budgetDial.dataset.configured = String(
+    Number.isFinite(usage.monthlyBudgetUsd),
+  );
+  budgetDial.classList.toggle(
+    "warning",
+    budgetPercent != null && budgetPercent >= 75 && budgetPercent < 100,
+  );
+  budgetDial.classList.toggle(
+    "danger",
+    budgetPercent != null && budgetPercent >= 100,
+  );
   $("#budget-detail").textContent = Number.isFinite(usage.monthlyBudgetUsd)
     ? `${usage.usageEstimate ? "≈" : ""}$${Number(usage.estimatedCost || 0).toFixed(2)} / $${usage.monthlyBudgetUsd.toFixed(2)}`
     : "SET IN COPILOT PANEL";
   const budgetInput = $("#copilot-budget-input");
   if (document.activeElement !== budgetInput) {
-    budgetInput.value = Number.isFinite(usage.monthlyBudgetUsd) ? usage.monthlyBudgetUsd.toFixed(2) : "";
+    budgetInput.value = Number.isFinite(usage.monthlyBudgetUsd)
+      ? usage.monthlyBudgetUsd.toFixed(2)
+      : "";
   }
   const tokenPriceInput = $("#copilot-token-price-input");
   if (document.activeElement !== tokenPriceInput) {
-    tokenPriceInput.value = Number.isFinite(usage.tokenPriceUsdPerMillion) ? usage.tokenPriceUsdPerMillion : "";
+    tokenPriceInput.value = Number.isFinite(usage.tokenPriceUsdPerMillion)
+      ? usage.tokenPriceUsdPerMillion
+      : "";
   }
-  $("#copilot-detail").textContent = usage.status === "ready"
-    ? `${usage.user} via ${usage.owner} · ${usage.billableCredits.toLocaleString()} billable · ${usage.models.length} models`
-    : usage.detail || "Copilot usage is unavailable.";
+  $("#copilot-detail").textContent =
+    usage.status === "ready"
+      ? `${usage.user} via ${usage.owner} · ${usage.billableCredits.toLocaleString()} billable · ${usage.models.length} models`
+      : usage.detail || "Copilot usage is unavailable.";
   const forecastPanel = $("#copilot-forecast");
   const forecast = usage.forecast;
   forecastPanel.hidden = !forecast?.requestCount;
   if (!forecastPanel.hidden) {
-    $("#copilot-forecast-title").textContent = usage.status === "ready"
-      ? "PAID COPILOT VELOCITY · GITHUB BASELINE + LOCAL SAMPLE"
-      : "PAID COPILOT VELOCITY · LOCAL ESTIMATE";
-    $("#copilot-velocity").textContent = `≈${forecast.creditsPerDay.toFixed(1)} credits/day`;
-    $("#copilot-projection").textContent = `≈${forecast.projectedMonthCredits.toFixed(0)} credits`;
-    $("#copilot-runway").textContent = Number.isFinite(forecast.daysUntilExhausted)
-      ? forecast.daysUntilExhausted <= 0 ? "Budget exhausted" : `≈${forecast.daysUntilExhausted.toFixed(1)} days`
+    $("#copilot-forecast-title").textContent =
+      usage.status === "ready"
+        ? "PAID COPILOT VELOCITY · GITHUB BASELINE + LOCAL SAMPLE"
+        : "PAID COPILOT VELOCITY · LOCAL ESTIMATE";
+    $("#copilot-velocity").textContent =
+      `≈${forecast.creditsPerDay.toFixed(1)} credits/day`;
+    $("#copilot-projection").textContent =
+      `≈${forecast.projectedMonthCredits.toFixed(0)} credits`;
+    $("#copilot-runway").textContent = Number.isFinite(
+      forecast.daysUntilExhausted,
+    )
+      ? forecast.daysUntilExhausted <= 0
+        ? "Budget exhausted"
+        : `≈${forecast.daysUntilExhausted.toFixed(1)} days`
       : "Set a budget";
-    $("#copilot-parallel").textContent = Number.isFinite(forecast.sustainableParallelFactor)
+    $("#copilot-parallel").textContent = Number.isFinite(
+      forecast.sustainableParallelFactor,
+    )
       ? forecast.sustainableParallelFactor < 1
         ? `Reduce to ≈${Math.max(0, forecast.sustainableParallelFactor).toFixed(1)}× velocity`
         : `Up to ≈${forecast.sustainableParallelFactor.toFixed(1)}× velocity`
       : "Set a budget";
     $("#copilot-confidence").textContent = [
       `${forecast.requestCount} locally observed requests over ${forecast.observationHours.toFixed(1)} hours.`,
-      forecast.authoritativeBaseline ? "Runway starts from GitHub's authoritative billed spend; velocity comes from local Copilot traffic." : "Billing and velocity are locally estimated because GitHub usage is unavailable.",
+      forecast.authoritativeBaseline
+        ? "Runway starts from GitHub's authoritative billed spend; velocity comes from local Copilot traffic."
+        : "Billing and velocity are locally estimated because GitHub usage is unavailable.",
       forecast.customTokenPrice
         ? `Custom price $${forecast.tokenPriceUsdPerMillion}/1M tokens is applied to local Copilot traffic.`
-        : forecast.estimatedRecords ? `${forecast.estimatedRecords} requests use estimated tokens or conservative model pricing.` : "Observed token counts and known model prices used.",
+        : forecast.estimatedRecords
+          ? `${forecast.estimatedRecords} requests use estimated tokens or conservative model pricing.`
+          : "Observed token counts and known model prices used.",
       "Ollama tokens are excluded. Parallel work is a paid Copilot burn-rate scenario, not a concurrency guarantee.",
     ].join(" ");
   }
   const actions = $("#copilot-actions");
   actions.hidden = usage.status === "ready" || usage.status === "loading";
-  $("#copilot-token-status").href = usage.tokenStatusUrl || "https://github.com/settings/personal-access-tokens";
-  $("#copilot-token-create").href = usage.tokenUrl || "https://github.com/settings/personal-access-tokens/new";
+  $("#copilot-token-status").href =
+    usage.tokenStatusUrl ||
+    "https://github.com/settings/personal-access-tokens";
+  $("#copilot-token-create").href =
+    usage.tokenUrl || "https://github.com/settings/personal-access-tokens/new";
 }
 
 $("#copilot-budget-form").addEventListener("submit", async (event) => {
@@ -323,7 +413,9 @@ $("#copilot-budget-form").addEventListener("submit", async (event) => {
     const usage = await response.json();
     if (!response.ok) throw new Error(usage.error || `HTTP ${response.status}`);
     renderCopilotUsage(usage);
-    status.textContent = monthlyBudgetUsd ? "Monthly budget saved on this Mac." : "Monthly budget removed.";
+    status.textContent = monthlyBudgetUsd
+      ? "Monthly budget saved on this Mac."
+      : "Monthly budget removed.";
   } catch (error) {
     status.textContent = error.message;
   } finally {
@@ -376,7 +468,8 @@ serverState.addEventListener("click", async () => {
       body: JSON.stringify({ enabled: enable }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!response.ok)
+      throw new Error(result.error || `HTTP ${response.status}`);
     ollamaControlPending = false;
     renderMetrics(result.metrics);
   } catch (error) {
@@ -395,7 +488,10 @@ serverState.addEventListener("click", async () => {
 function inputTranscript(item) {
   if (!item.messages?.length) return item.prompt || "[empty prompt]";
   return item.messages
-    .map((message) => `${String(message.role || "message").toUpperCase()}\n${message.content || "[empty]"}`)
+    .map(
+      (message) =>
+        `${String(message.role || "message").toUpperCase()}\n${message.content || "[empty]"}`,
+    )
     .join("\n\n");
 }
 
@@ -417,7 +513,8 @@ function captureScrollAnchor() {
   for (const element of stream.querySelectorAll(".exchange")) {
     if (element.hidden) continue;
     const rect = element.getBoundingClientRect();
-    if (rect.bottom > streamTop) return { element, offset: rect.top - streamTop };
+    if (rect.bottom > streamTop)
+      return { element, offset: rect.top - streamTop };
   }
   return null;
 }
@@ -436,7 +533,8 @@ function preserveViewport(mutate) {
     return;
   }
   const active = document.activeElement;
-  const trackFocus = active && active !== document.body && stream.contains(active);
+  const trackFocus =
+    active && active !== document.body && stream.contains(active);
   const activeScroll = trackFocus ? active.scrollTop : 0;
   const anchor = captureScrollAnchor();
   mutate();
@@ -455,15 +553,24 @@ function nearFollowEdge(threshold = 24) {
 
 function stringHash(value) {
   let hash = 0;
-  for (const character of String(value)) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  for (const character of String(value))
+    hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
   return Math.abs(hash);
 }
 
 function sessionIdentity(item) {
   if (item.session?.id) return item.session;
   const seed = `${item.client || "legacy"}|${item.model || "unknown"}|${item.messages?.[0]?.content || item.prompt || ""}`;
-  const suffix = stringHash(seed).toString(16).padStart(4, "0").slice(-4).toUpperCase();
-  return { id: `legacy-${suffix}`, label: `Session ${suffix}`, source: "legacy" };
+  const suffix = stringHash(seed)
+    .toString(16)
+    .padStart(4, "0")
+    .slice(-4)
+    .toUpperCase();
+  return {
+    id: `legacy-${suffix}`,
+    label: `Session ${suffix}`,
+    source: "legacy",
+  };
 }
 
 function sessionColor(id) {
@@ -482,7 +589,9 @@ function registerSession(item) {
     sessionFilter.append(option);
   }
   entry.count += 1;
-  const option = [...sessionFilter.options].find((candidate) => candidate.value === session.id);
+  const option = [...sessionFilter.options].find(
+    (candidate) => candidate.value === session.id,
+  );
   option.textContent = `${entry.label} · ${entry.count}`;
   return entry;
 }
@@ -491,14 +600,18 @@ function applySessionFilter(openNewest = false) {
   const selected = sessionFilter.value;
   const applyHidden = () => {
     exchanges.forEach((element) => {
-      element.hidden = selected !== "all" && element.dataset.sessionId !== selected;
+      element.hidden =
+        selected !== "all" && element.dataset.sessionId !== selected;
     });
   };
   if (openNewest) applyHidden();
   else preserveViewport(applyHidden);
   if (openNewest) {
-    const visible = [...stream.querySelectorAll(".exchange")].filter((element) => !element.hidden);
-    const newestVisible = dateSortDirection === "desc" ? visible[0] : visible.at(-1);
+    const visible = [...stream.querySelectorAll(".exchange")].filter(
+      (element) => !element.hidden,
+    );
+    const newestVisible =
+      dateSortDirection === "desc" ? visible[0] : visible.at(-1);
     expandOnly(newestVisible || null);
   }
 }
@@ -506,7 +619,12 @@ function applySessionFilter(openNewest = false) {
 function sortExchangeRows() {
   const rows = [...stream.querySelectorAll(".exchange")];
   const sorted = [...rows].sort((left, right) =>
-    globalThis.SaxjaxDateTimeSort.compareDateTimes(left, right, dateSortDirection, (element) => element.dataset.startedAt),
+    globalThis.SaxjaxDateTimeSort.compareDateTimes(
+      left,
+      right,
+      dateSortDirection,
+      (element) => element.dataset.startedAt,
+    ),
   );
   if (rows.every((element, index) => element === sorted[index])) return;
   preserveViewport(() => sorted.forEach((element) => stream.append(element)));
@@ -533,7 +651,10 @@ function updateLiveTokenEstimate(element, item = {}) {
 
   if (inputTokens && capacity) {
     const percent = (inputTokens / capacity) * 100;
-    contextBox.style.setProperty("--context-percent", `${Math.min(percent, 100)}%`);
+    contextBox.style.setProperty(
+      "--context-percent",
+      `${Math.min(percent, 100)}%`,
+    );
     contextBox.querySelector(".context-label").textContent =
       `≈${inputTokens.toLocaleString()} / ${capacity.toLocaleString()} tokens · ≈${number(percent, 1)}%`;
     contextBox.querySelector("small").textContent =
@@ -560,12 +681,17 @@ function ensureExchange(item, prepend = true) {
   element.dataset.estimatedInputTokens = String(
     estimateTokens(inputTranscript(item).length, item.messages?.length || 0),
   );
-  element.querySelector(".exchange-model").textContent = item.model || "unknown model";
+  element.querySelector(".exchange-model").textContent =
+    item.model || "unknown model";
   const sessionBadge = element.querySelector(".session-badge");
-  const sourceLabel = String(item.sourceLabel || item.source || "Ollama").toLocaleUpperCase();
+  const sourceLabel = String(
+    item.sourceLabel || item.source || "Ollama",
+  ).toLocaleUpperCase();
   sessionBadge.textContent = `${sourceLabel} · ${session.label.replace(/^Session\s+/i, "S/")}`;
   sessionBadge.title = `${session.label} · ${session.source} identity`;
-  element.querySelector("time").textContent = new Date(item.startedAt).toLocaleTimeString();
+  element.querySelector("time").textContent = new Date(
+    item.startedAt,
+  ).toLocaleTimeString();
   element.querySelector(".prompt pre").textContent = inputTranscript(item);
   element.querySelector(".response pre").textContent = item.response || "";
   if (item.thinking) {
@@ -588,10 +714,16 @@ function updateExchange(element, item) {
     element.querySelector(".prompt pre").textContent = inputTranscript(item);
   }
   element.dataset.inputContextStatus = item.inputContextStatus || "captured";
-  element.querySelector(".exchange-status").textContent = item.status || "active";
-  const failure = item.error || (item.status === "error" ? "Request failed without a reported reason." : "");
+  element.querySelector(".exchange-status").textContent =
+    item.status || "active";
+  const failure =
+    item.error ||
+    (item.status === "error"
+      ? "Request failed without a reported reason."
+      : "");
   if (failure) {
-    element.querySelector(".response pre").textContent = item.response || `ERROR\n${failure}`;
+    element.querySelector(".response pre").textContent =
+      item.response || `ERROR\n${failure}`;
   } else if (item.response != null) {
     element.querySelector(".response pre").textContent = item.response;
   }
@@ -600,7 +732,8 @@ function updateExchange(element, item) {
     element.querySelector(".thinking pre").textContent = item.thinking;
   }
   if (item.finishedAt) {
-    const elapsed = (new Date(item.finishedAt) - new Date(item.startedAt)) / 1000;
+    const elapsed =
+      (new Date(item.finishedAt) - new Date(item.startedAt)) / 1000;
     element.querySelector(".latency").textContent = `${number(elapsed, 2)}s`;
   }
   const m = item.metrics;
@@ -608,54 +741,87 @@ function updateExchange(element, item) {
     const estimatedInput = Number(element.dataset.estimatedInputTokens) || 0;
     const estimatedOutput = estimateTokens(
       element.querySelector(".response pre").textContent.length +
-      element.querySelector(".thinking pre").textContent.length,
+        element.querySelector(".thinking pre").textContent.length,
     );
     const inputTokens = m.promptTokens ?? estimatedInput;
     const outputTokens = m.outputTokens ?? estimatedOutput;
-    const speed = m.outputTokens && m.outputDurationNs ? m.outputTokens / (m.outputDurationNs / 1e9) : null;
+    const speed =
+      m.outputTokens && m.outputDurationNs
+        ? m.outputTokens / (m.outputDurationNs / 1e9)
+        : null;
     const tokenStats = element.querySelector(".token-stats");
-    tokenStats.classList.toggle("estimated", m.promptTokens == null || m.outputTokens == null);
+    tokenStats.classList.toggle(
+      "estimated",
+      m.promptTokens == null || m.outputTokens == null,
+    );
     tokenStats.textContent = [
-      inputTokens ? `${m.promptTokens == null ? "≈" : ""}${inputTokens.toLocaleString()} in` : null,
-      outputTokens ? `${m.outputTokens == null ? "≈" : ""}${outputTokens.toLocaleString()} out` : null,
+      inputTokens
+        ? `${m.promptTokens == null ? "≈" : ""}${inputTokens.toLocaleString()} in`
+        : null,
+      outputTokens
+        ? `${m.outputTokens == null ? "≈" : ""}${outputTokens.toLocaleString()} out`
+        : null,
       speed != null ? `${number(speed, 1)} avg tok/s` : null,
-    ].filter(Boolean).join(" · ");
+    ]
+      .filter(Boolean)
+      .join(" · ");
   } else {
     updateLiveTokenEstimate(element, item);
   }
   const contextBox = element.querySelector(".context-usage");
   const isCopilot = item.provider === "github-copilot";
-  const capacity = m?.contextWindow || (isCopilot ? null : modelContexts.get(item.model));
+  const capacity =
+    m?.contextWindow || (isCopilot ? null : modelContexts.get(item.model));
   const exactUsed = m?.promptTokens;
-  const used = exactUsed ?? (Number(element.dataset.estimatedInputTokens) || null);
+  const used =
+    exactUsed ?? (Number(element.dataset.estimatedInputTokens) || null);
   if (used != null && capacity) {
     const percent = (used / capacity) * 100;
     contextBox.classList.toggle("estimated", exactUsed == null);
-    contextBox.style.setProperty("--context-percent", `${Math.min(percent, 100)}%`);
-    contextBox.querySelector(".context-label").textContent = `${exactUsed == null ? "≈" : ""}${used.toLocaleString()} / ${capacity.toLocaleString()} tokens · ${exactUsed == null ? "≈" : ""}${number(percent, 1)}%`;
-    contextBox.querySelector("small").textContent = exactUsed == null
-      ? "Estimated input tokens versus the context capacity reported by the client."
-      : `Exact input tokens and context capacity reported by ${item.client || "the model client"}.`;
+    contextBox.style.setProperty(
+      "--context-percent",
+      `${Math.min(percent, 100)}%`,
+    );
+    contextBox.querySelector(".context-label").textContent =
+      `${exactUsed == null ? "≈" : ""}${used.toLocaleString()} / ${capacity.toLocaleString()} tokens · ${exactUsed == null ? "≈" : ""}${number(percent, 1)}%`;
+    contextBox.querySelector("small").textContent =
+      exactUsed == null
+        ? "Estimated input tokens versus the context capacity reported by the client."
+        : `Exact input tokens and context capacity reported by ${item.client || "the model client"}.`;
     contextBox.classList.toggle("warning", percent >= 70 && percent < 90);
     contextBox.classList.toggle("danger", percent >= 90);
   } else if (item.status === "error") {
     contextBox.classList.remove("estimated", "warning", "danger");
     contextBox.classList.add("unavailable");
     contextBox.style.setProperty("--context-percent", "0%");
-    contextBox.querySelector(".context-label").textContent = "Unavailable · request failed";
+    contextBox.querySelector(".context-label").textContent =
+      "Unavailable · request failed";
     contextBox.querySelector("small").textContent =
       "No context usage was reported because this request ended with an error.";
   } else if (isCopilot) {
-    contextBox.classList.remove("estimated", "warning", "danger", "unavailable");
+    contextBox.classList.remove(
+      "estimated",
+      "warning",
+      "danger",
+      "unavailable",
+    );
     contextBox.style.setProperty("--context-percent", "0%");
     contextBox.querySelector(".context-label").textContent = used
       ? `${exactUsed == null ? "≈" : ""}${used.toLocaleString()} input tokens · limit unavailable`
       : "Context metrics unavailable";
-    contextBox.querySelector("small").textContent = `${item.client || "GitHub Copilot"} did not expose a context-window limit for this request.`;
+    contextBox.querySelector("small").textContent =
+      `${item.client || "GitHub Copilot"} did not expose a context-window limit for this request.`;
   } else if (m) {
-    contextBox.classList.remove("estimated", "warning", "danger", "unavailable");
-    contextBox.querySelector(".context-label").textContent = item.status === "active" ? "Calculating…" : "Not reported";
-    contextBox.querySelector("small").textContent = "Ollama did not report an exact input-token count for this request.";
+    contextBox.classList.remove(
+      "estimated",
+      "warning",
+      "danger",
+      "unavailable",
+    );
+    contextBox.querySelector(".context-label").textContent =
+      item.status === "active" ? "Calculating…" : "Not reported";
+    contextBox.querySelector("small").textContent =
+      "Ollama did not report an exact input-token count for this request.";
   }
 }
 
@@ -691,8 +857,14 @@ function resetHistoryView(state) {
   state.history.forEach((item) => ensureExchange(item, false));
   sortExchangeRows();
   if (!state.active.length && !state.history.length) {
-    const title = state.reason === "cleared" ? "History deleted" : "Listening for inference traffic";
-    showEmptyState(title, "New Ollama and Copilot CLI requests will appear here and remain until you clear them.");
+    const title =
+      state.reason === "cleared"
+        ? "History deleted"
+        : "Listening for inference traffic";
+    showEmptyState(
+      title,
+      "New Ollama and Copilot CLI requests will appear here and remain until you clear them.",
+    );
   }
   applySessionFilter(true);
   persistViewState();
@@ -712,22 +884,26 @@ function syncSharedSelection() {
   }
 }
 
-store.on("state", (state) => {
-  renderMetrics(state.metrics);
-  renderCopilotUsage(state.copilot);
-  $("#total-count").textContent = state.counters.total;
-  $("#error-count").textContent = state.counters.errors;
-  [...state.active]
-    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))
-    .forEach((item) => ensureExchange(item, false));
-  state.history.forEach((item) => ensureExchange(item, false));
-  sortExchangeRows();
-  if (!initialStateRendered) {
-    restoreViewState();
-    initialStateRendered = true;
-  }
-  syncSharedSelection();
-}, { replay: true });
+store.on(
+  "state",
+  (state) => {
+    renderMetrics(state.metrics);
+    renderCopilotUsage(state.copilot);
+    $("#total-count").textContent = state.counters.total;
+    $("#error-count").textContent = state.counters.errors;
+    [...state.active]
+      .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))
+      .forEach((item) => ensureExchange(item, false));
+    state.history.forEach((item) => ensureExchange(item, false));
+    sortExchangeRows();
+    if (!initialStateRendered) {
+      restoreViewState();
+      initialStateRendered = true;
+    }
+    syncSharedSelection();
+  },
+  { replay: true },
+);
 store.on("metrics", (metrics) => renderMetrics(metrics), { replay: true });
 store.on("copilot", (copilot) => renderCopilotUsage(copilot), { replay: true });
 store.on("selection", () => syncSharedSelection());
@@ -744,8 +920,12 @@ store.on("request-started", (item) => {
 store.on("token", (token) => {
   const element = exchanges.get(token.id);
   if (!element) return;
-  const target = token.field === "thinking" ? element.querySelector(".thinking pre") : element.querySelector(".response pre");
-  if (token.field === "thinking") element.querySelector(".thinking").hidden = false;
+  const target =
+    token.field === "thinking"
+      ? element.querySelector(".thinking pre")
+      : element.querySelector(".response pre");
+  if (token.field === "thinking")
+    element.querySelector(".thinking").hidden = false;
   target.textContent += token.value;
   updateLiveTokenEstimate(element);
 });
@@ -757,17 +937,24 @@ store.on("history-reset", (state) => resetHistoryView(state));
 dateSort.addEventListener("change", () => {
   dateSortDirection = globalThis.SaxjaxDateTimeSort.normalize(dateSort.value);
   const url = new URL(location.href);
-  if (dateSortDirection === "asc") url.searchParams.set("sort", "asc"); else url.searchParams.delete("sort");
+  if (dateSortDirection === "asc") url.searchParams.set("sort", "asc");
+  else url.searchParams.delete("sort");
   history.replaceState(null, "", url);
   sortExchangeRows();
   applySessionFilter(false);
   follow();
   scheduleViewStatePersistence();
-  window.dispatchEvent(new CustomEvent("saxjax-date-sort-change", { detail: { direction: dateSortDirection } }));
+  window.dispatchEvent(
+    new CustomEvent("saxjax-date-sort-change", {
+      detail: { direction: dateSortDirection },
+    }),
+  );
 });
 
 window.addEventListener("saxjax-date-sort-change", (event) => {
-  const direction = globalThis.SaxjaxDateTimeSort.normalize(event.detail?.direction);
+  const direction = globalThis.SaxjaxDateTimeSort.normalize(
+    event.detail?.direction,
+  );
   if (direction === dateSortDirection) return;
   dateSortDirection = direction;
   dateSort.value = direction;
@@ -789,7 +976,9 @@ stream.addEventListener("click", (event) => {
   if (!trigger) return;
   const exchange = trigger.closest(".exchange");
   const kind = trigger.dataset.kind;
-  const content = exchange.querySelector(kind === "in" ? ".prompt pre" : ".response pre").textContent;
+  const content = exchange.querySelector(
+    kind === "in" ? ".prompt pre" : ".response pre",
+  ).textContent;
   const context = exchange.querySelector(".context-label").textContent;
   const time = exchange.querySelector("time").textContent;
   const model = exchange.querySelector(".exchange-model").textContent;
@@ -797,17 +986,28 @@ stream.addEventListener("click", (event) => {
 
   contentReader.querySelector(".reader-shell").dataset.kind = kind;
   const inputStatus = exchange.dataset.inputContextStatus;
-  $("#reader-direction").textContent = kind === "in"
-    ? inputStatus === "client-rendered" ? "COPILOT-RENDERED INPUT" : inputStatus === "reconstructed-local" ? "LOCALLY RECONSTRUCTED INPUT" : "INCOMING CONTEXT"
-    : "MODEL OUTPUT";
-  $("#reader-title").textContent = kind === "in"
-    ? inputStatus === "client-rendered" ? "Exact local rendered context" : inputStatus === "reconstructed-local" ? "All locally recorded VS Code context" : "Context at request time"
-    : "Complete response";
+  $("#reader-direction").textContent =
+    kind === "in"
+      ? inputStatus === "client-rendered"
+        ? "COPILOT-RENDERED INPUT"
+        : inputStatus === "reconstructed-local"
+          ? "LOCALLY RECONSTRUCTED INPUT"
+          : "INCOMING CONTEXT"
+      : "MODEL OUTPUT";
+  $("#reader-title").textContent =
+    kind === "in"
+      ? inputStatus === "client-rendered"
+        ? "Exact local rendered context"
+        : inputStatus === "reconstructed-local"
+          ? "All locally recorded VS Code context"
+          : "Context at request time"
+      : "Complete response";
   $("#reader-model").textContent = model;
   $("#reader-time").textContent = time;
   $("#reader-context").textContent = context;
   $("#reader-content").textContent = content || "[No content]";
-  $("#reader-count").textContent = `${content.length.toLocaleString()} characters · ${lineCount.toLocaleString()} lines`;
+  $("#reader-count").textContent =
+    `${content.length.toLocaleString()} characters · ${lineCount.toLocaleString()} lines`;
   contentReader.showModal();
   $("#reader-content").scrollTop = 0;
   $("#reader-content").focus();
@@ -817,15 +1017,24 @@ sessionFilter.addEventListener("change", () => {
   applySessionFilter(true);
   follow();
   persistViewState();
-  store.setSelectedSessionId(sessionFilter.value === "all" ? null : sessionFilter.value);
+  store.setSelectedSessionId(
+    sessionFilter.value === "all" ? null : sessionFilter.value,
+  );
 });
 
 autofollow.addEventListener("change", persistViewState);
-stream.addEventListener("scroll", () => {
-  if (!restoringView && autofollow.checked && !nearFollowEdge()) autofollow.checked = false;
-  scheduleViewStatePersistence();
-}, { passive: true });
-window.addEventListener("scroll", scheduleViewStatePersistence, { passive: true });
+stream.addEventListener(
+  "scroll",
+  () => {
+    if (!restoringView && autofollow.checked && !nearFollowEdge())
+      autofollow.checked = false;
+    scheduleViewStatePersistence();
+  },
+  { passive: true },
+);
+window.addEventListener("scroll", scheduleViewStatePersistence, {
+  passive: true,
+});
 window.addEventListener("pagehide", persistViewState);
 
 $("#reader-close").addEventListener("click", () => contentReader.close());
@@ -862,7 +1071,9 @@ helpDialog.addEventListener("click", async (event) => {
   } catch {
     button.textContent = "COPY FAILED";
   }
-  setTimeout(() => { button.textContent = "COPY"; }, 1400);
+  setTimeout(() => {
+    button.textContent = "COPY";
+  }, 1400);
 });
 
 $("#clear-view").addEventListener("click", async (event) => {
@@ -887,10 +1098,14 @@ $("#clear-view").addEventListener("click", async (event) => {
 });
 
 function updateClock() {
-  $("#clock").textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  $("#clock").textContent = new Date().toLocaleTimeString("en-GB", {
+    hour12: false,
+  });
 }
 
-$("#clock-zone").textContent = (Intl.DateTimeFormat().resolvedOptions().timeZone || "LOCAL TIME")
+$("#clock-zone").textContent = (
+  Intl.DateTimeFormat().resolvedOptions().timeZone || "LOCAL TIME"
+)
   .replaceAll("_", " ")
   .toUpperCase();
 updateClock();

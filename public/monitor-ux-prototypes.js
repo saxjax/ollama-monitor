@@ -330,11 +330,9 @@ function buildView(events, month, unit, anomalyMode = "value", threshold = 0) {
       activeSessions.add(event.sessionId);
     }
   }
-
   for (const slot of slots) {
     slot.concurrent = slotSessions.get(slot.id)?.size || 0;
   }
-
   const daily = [...dayMap.values()];
   const peakDay = daily.reduce((peak, day) => day.total > peak.total ? day : peak, daily[0] || { total: 0, events: [] });
   const peakSlot = slots.reduce((peak, slot) => slot.total > peak.total ? slot : peak, slots[0] || { total: 0, events: [] });
@@ -1505,7 +1503,10 @@ async function startMonitorPrototype() {
   setLoadingStage("Contacting local monitor APIs...", "Reading usage timeline and live state from this Mac.");
   const [timelineResponse, stateResponse, feedbackResponse] = await Promise.all([
     fetch("/monitor/api/usage-timeline", { cache: "no-store" }),
-    fetch("/monitor/api/state", { cache: "no-store" }),
+    // The durable timeline already supplies historical evidence. Fetch only
+    // active gateway traffic here so the same multi-megabyte history is not
+    // downloaded and parsed a second time during prototype startup.
+    fetch("/monitor/api/state?compact=1", { cache: "no-store" }),
     fetch("/monitor/api/prototype-feedback", { cache: "no-store" }),
   ]);
   setLoadingStage("Decoding local records...", "Large local history can take longer to decode.");
@@ -1997,7 +1998,7 @@ async function startMonitorPrototype() {
     render();
   });
 
-  const stream = new EventSource("/monitor/events");
+  const stream = new EventSource("/monitor/events?compact=1");
   stream.addEventListener("state", (event) => { liveState = JSON.parse(event.data); rememberSystemSample(); updateLive(); });
   stream.addEventListener("metrics", (event) => { liveState.metrics = JSON.parse(event.data); rememberSystemSample(); updateLive(); });
   stream.addEventListener("request-started", (event) => {

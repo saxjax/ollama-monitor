@@ -109,18 +109,18 @@ function requestSnapshot(item) {
   return captureSnapshot(normalizeCaptureRecord(item));
 }
 
-function initialState() {
+function initialState({ includeHistoricalData = true } = {}) {
   const copilotTraffic = copilotCapture?.snapshot() || { active: [], history: [] };
   const traffic = combineCaptureState(
-    { active: [...requests.values()].map(requestSnapshot), history: history.map(requestSnapshot) },
-    { active: copilotTraffic.active.map(requestSnapshot), history: copilotTraffic.history.map(requestSnapshot) },
+    { active: [...requests.values()].map(requestSnapshot), history: includeHistoricalData ? history.map(requestSnapshot) : [] },
+    { active: copilotTraffic.active.map(requestSnapshot), history: includeHistoricalData ? copilotTraffic.history.map(requestSnapshot) : [] },
   );
   return {
     metrics: latestMetrics,
     ...traffic,
     counters: { ...counters },
     copilot: copilotDashboardState(copilotUsage.snapshot()),
-    usageTimeline: usageTimelineStore?.snapshot() || null,
+    usageTimeline: includeHistoricalData ? usageTimelineStore?.snapshot() || null : null,
   };
 }
 
@@ -907,7 +907,7 @@ const server = http.createServer(async (request, response) => {
     return serveAsset(response, "usage-timeline-prototype-fixture.js", "text/javascript; charset=utf-8");
   }
   if (requestUrl.pathname === "/monitor/api/state") {
-    return json(response, 200, initialState());
+    return json(response, 200, initialState({ includeHistoricalData: requestUrl.searchParams.get("compact") !== "1" }));
   }
   if (requestUrl.pathname === "/monitor/api/usage-timeline" && request.method === "GET") {
     return json(response, 200, usageTimelineStore.snapshot());
@@ -1096,7 +1096,8 @@ const server = http.createServer(async (request, response) => {
     }
   }
   if (requestUrl.pathname === "/monitor/events") {
-    eventStream.subscribe(request, response, initialState());
+    const compact = requestUrl.searchParams.get("compact") === "1";
+    eventStream.subscribe(request, response, initialState({ includeHistoricalData: !compact }));
     return;
   }
   return proxyRequest(request, response);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildUsageTimelineViewModel, displayValue } from "./usage-timeline-view-model.mjs";
+import { buildUsageTimelineViewModel, concurrentSessionCounts, displayValue } from "./usage-timeline-view-model.mjs";
 
 const event = (id, usageAt, measurements, family = "gpt") => ({
   id,
@@ -32,4 +32,18 @@ test("uses an explicit selected/reference pair for a locked comparison scale", (
   assert.equal(view.referenceMonth, "2026-07");
   assert.equal(view.referenceTotals.find((value) => value === 7), 7);
   assert.equal(view.scalePeak, 7);
+});
+
+test("counts unique concurrent sessions in each occupied slot with one event pass", () => {
+  const counts = concurrentSessionCounts([
+    { day: "2026-06-03", minute: 10, durationMinutes: 50, sessionId: "alpha" },
+    { day: "2026-06-03", minute: 25, durationMinutes: 10, sessionId: "alpha" },
+    { day: "2026-06-03", minute: 30, durationMinutes: 30, sessionId: "beta" },
+    { day: "2026-06-03", minute: 1_430, durationMinutes: 30, sessionId: "late" },
+  ]);
+
+  assert.equal(counts.get("2026-06-03:0"), 1);
+  assert.equal(counts.get("2026-06-03:1"), 2);
+  assert.equal(counts.get("2026-06-03:47"), 1);
+  assert.equal(counts.has("2026-06-03:48"), false);
 });

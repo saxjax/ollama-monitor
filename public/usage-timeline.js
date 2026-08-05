@@ -90,9 +90,15 @@ async function start() {
   await import("/monitor/usage-timeline-prototype.js");
 }
 
-start().catch((error) => {
-  const host = document.createElement("section");
-  host.className = "timeline-prototype";
-  host.textContent = `Usage timeline unavailable: ${error.message}`;
-  document.querySelector(".workbench")?.before(host);
-});
+// Full-monitor prototypes own their timeline surface and fetch the same
+// durable evidence themselves. Avoid parsing and projecting the large journal
+// twice before the selected prototype can paint.
+const monitorPrototypeEnabled = new URLSearchParams(location.search).get("prototype") === "monitor";
+if (!monitorPrototypeEnabled) {
+  start().catch((error) => {
+    const host = document.createElement("section");
+    host.className = "timeline-prototype";
+    host.textContent = `Usage timeline unavailable: ${error.message}`;
+    document.querySelector(".workbench")?.before(host);
+  });
+}

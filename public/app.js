@@ -650,7 +650,12 @@ function resetHistoryView(state) {
   persistViewState();
 }
 
-const eventSource = new EventSource("/monitor/events");
+const appLocationParams = new URLSearchParams(location.search);
+const explicitPrototypeVariant = appLocationParams.get("variant")?.toUpperCase();
+const compactPrototypeStream = appLocationParams.get("prototype") === "monitor"
+  && explicitPrototypeVariant
+  && explicitPrototypeVariant !== "A0";
+const eventSource = new EventSource(`/monitor/events${compactPrototypeStream ? "?compact=1" : ""}`);
 eventSource.addEventListener("state", (event) => {
   const state = JSON.parse(event.data);
   renderMetrics(state.metrics);

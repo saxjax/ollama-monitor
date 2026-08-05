@@ -28,6 +28,24 @@ export function timelineMonths(events, timeZone) {
   }))].sort();
 }
 
+export function concurrentSessionCounts(events, { bucketMinutes = 30, bucketsPerDay = 48 } = {}) {
+  const sessionsBySlot = new Map();
+  for (const event of events) {
+    const firstBucket = Math.max(0, Math.floor(event.minute / bucketMinutes));
+    const lastBucket = Math.min(
+      bucketsPerDay - 1,
+      Math.ceil((event.minute + event.durationMinutes) / bucketMinutes) - 1,
+    );
+    for (let bucket = firstBucket; bucket <= lastBucket; bucket += 1) {
+      const slotId = `${event.day}:${bucket}`;
+      const sessions = sessionsBySlot.get(slotId) || new Set();
+      sessions.add(event.sessionId);
+      sessionsBySlot.set(slotId, sessions);
+    }
+  }
+  return new Map([...sessionsBySlot].map(([slotId, sessions]) => [slotId, sessions.size]));
+}
+
 export function buildUsageTimelineViewModel(events, {
   unit = "native",
   timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,

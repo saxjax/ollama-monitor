@@ -2,6 +2,8 @@
 // /monitor/?prototype=monitor&variant=A. Monitor data stays read-only; the
 // separate prototype review layer persists only comments and aggregate usage.
 
+import { concurrentSessionCounts } from "/monitor/usage-timeline-view-model.mjs";
+
 const params = new URLSearchParams(location.search);
 const prototypeEnabled = params.get("prototype") === "monitor";
 const labEnabled = prototypeEnabled && params.get("surface") !== "default";
@@ -303,13 +305,12 @@ function buildView(events, month, unit, anomalyMode = "value", threshold = 0) {
     slot.total += value;
     slot.byOrigin[event.origin] = (slot.byOrigin[event.origin] || 0) + value;
   }
-  for (const slot of slots) {
-    const start = slot.bucket * 30;
-    const end = start + 30;
-    slot.concurrent = new Set(monthEvents
-      .filter((event) => event.day === slot.day && event.minute < end && event.minute + event.durationMinutes > start)
-      .map((event) => event.sessionId)).size;
-  }
+  // Populate concurrency while walking the events instead of scanning the
+  // complete month once for every half-hour slot. Large imported journals can
+  // contain tens of thousands of events, so the former slots × events pass
+  // could leave the browser's main thread unresponsive before first paint.
+  const concurrentSessions = concurrentSessionCounts(monthEvents);
+  for (const slot of slots) slot.concurrent = concurrentSessions.get(slot.id) || 0;
   const daily = [...dayMap.values()];
   const measuredEvents = monthEvents.filter((event) => Number.isFinite(event[unit]));
   const total = measuredEvents.reduce((sum, event) => sum + event[unit], 0);
@@ -1534,7 +1535,10 @@ async function startMonitorPrototype() {
 
   const [timelineResponse, stateResponse, feedbackResponse] = await Promise.all([
     fetch("/monitor/api/usage-timeline", { cache: "no-store" }),
-    fetch("/monitor/api/state", { cache: "no-store" }),
+    // The durable timeline already supplies historical evidence. Fetch only
+    // active gateway traffic here so the same multi-megabyte history is not
+    // downloaded and parsed a second time during prototype startup.
+    fetch("/monitor/api/state?compact=1", { cache: "no-store" }),
     fetch("/monitor/api/prototype-feedback", { cache: "no-store" }),
   ]);
   const timeline = await timelineResponse.json();
@@ -2023,7 +2027,7 @@ async function startMonitorPrototype() {
     render();
   });
 
-  const stream = new EventSource("/monitor/events");
+  const stream = new EventSource("/monitor/events?compact=1");
   stream.addEventListener("state", (event) => { liveState = JSON.parse(event.data); rememberSystemSample(); updateLive(); });
   stream.addEventListener("metrics", (event) => { liveState.metrics = JSON.parse(event.data); rememberSystemSample(); updateLive(); });
   stream.addEventListener("request-started", (event) => {
